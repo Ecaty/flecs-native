@@ -21,6 +21,14 @@ void register_core(flecs::world& world) {
         .member("g", &Color::g)
         .member("b", &Color::b)
         .member("a", &Color::a);
+    world.component<Presented>("Presented")
+        .member("position", &Presented::position)
+        .member("rotation", &Presented::rotation)
+        .member("scale", &Presented::scale)
+        .member("color", &Presented::color)
+        .member("frame", &Presented::frame)
+        .member("primitive", &Presented::primitive)
+        .member("has_label", &Presented::has_label);
     world.component<Primitive>("Primitive")
         .member("kind", &Primitive::kind);
     world.component<Label>("Label")

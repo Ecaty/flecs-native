@@ -25,7 +25,7 @@ struct fu_context {
 static char create_error[4096]{};
 static_assert(sizeof(fu_view) == 80, "Unity snapshot ABI changed");
 
-int32_t fu_abi_version(void) { return 1; }
+int32_t fu_abi_version(void) { return 2; }
 int32_t fu_view_size(void) { return static_cast<int32_t>(sizeof(fu_view)); }
 const char* fu_version(void) { return FLECS_VERSION; }
 const char* fu_last_error(fu_context* ctx) { return ctx ? ctx->error : create_error; }
@@ -132,6 +132,20 @@ int32_t fu_read_views(fu_context* ctx, fu_view* out, int32_t capacity) {
         out[index] = view;
     });
     return total; // May exceed capacity: caller grows the buffer and reads again.
+}
+
+int32_t fu_write_presented(fu_context* ctx, const fu_view* views, int32_t count, int32_t frame) {
+    if (!ctx || count < 0 || (count && !views)) return -1;
+    try {
+        for (int32_t i = 0; i < count; i++) {
+            const auto& v = views[i];
+            if (!ecs_is_alive(ctx->world, v.entity)) continue;
+            ctx->world.entity(v.entity).set<Presented>({
+                {v.px, v.py, v.pz}, {v.rx, v.ry, v.rz}, {v.sx, v.sy, v.sz},
+                {v.r, v.g, v.b, v.a}, frame, v.primitive, v.has_label});
+        }
+        return 0;
+    } catch (...) { return -1; }
 }
 
 char* fu_entity_name(fu_context* ctx, uint64_t entity) {

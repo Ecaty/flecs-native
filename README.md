@@ -5,3 +5,5 @@ Shared C++17 runtime for Ecaty-compatible frontends: reflected components, world
 Build this module with an application that implements `flecs_unity::register_application(flecs::world&)`; Ecaty's `Native` build composes it with `ecaty-native` into one plugin. No Unity SDK is required in this source.
 
 Canonical project intent, ownership and continuation instructions: [Ecaty AGENTS](https://github.com/Ecaty/Ecaty/blob/main/AGENTS.md), [PROJECT](https://github.com/Ecaty/Ecaty/blob/main/docs/PROJECT.md), [DEVELOPMENT](https://github.com/Ecaty/Ecaty/blob/main/docs/DEVELOPMENT.md), [STATUS](https://github.com/Ecaty/Ecaty/blob/main/docs/STATUS.md).
+
+Current C ABI: **v2**, 80-byte view unchanged. `fu_write_presented` accepts batched presentation acknowledgements into reflected `Presented`; authoritative components remain native-owned. Match the native binary and managed bridge version. Label owns its reflected UTF-8 string through C++ lifecycle hooks, including prefab copies.

@@ -31,6 +31,8 @@ FU_API int32_t fu_run_script(fu_context *ctx, const char *code);
 FU_API int32_t fu_set_managed_script(fu_context *ctx, const char *path, const char *code);
 FU_API const char *fu_last_error(fu_context *ctx);
 FU_API int32_t fu_read_views(fu_context *ctx, fu_view *out, int32_t capacity);
+/* Presentation acknowledgements; never writes authoritative transform/color. */
+FU_API int32_t fu_write_presented(fu_context *ctx, const fu_view *views, int32_t count, int32_t frame);
 FU_API char *fu_entity_name(fu_context *ctx, uint64_t entity);
 FU_API char *fu_label(fu_context *ctx, uint64_t entity);
 FU_API char *fu_query_json(fu_context *ctx, const char *expression);
