@@ -1,0 +1,22 @@
+# ThreadSanitizer suppressions file for behaviortree_cpp_test
+
+# ZeroMQ false positives (third-party library). libzmq is not built with TSan
+# instrumentation and uses hand-rolled atomics that TSan cannot understand.
+# The module rule covers a system-installed shared library; the namespace rule
+# covers the Conan build, where zmq is compiled from source and linked
+# statically, so its symbols do not live in a libzmq.so module.
+race:zmq::*
+race:libzmq.so
+
+# False positive: std::swap of std::deque under mutex provides proper synchronization
+# TSAN does not track ownership transfer through container swap operations
+race:FileLogger2::writerLoop
+race:SqliteLogger::writerLoop
+
+# False positive: mutex lock/unlock pair across container swap is valid
+mutex:FileLogger2::writerLoop
+mutex:FileLogger2::callback
+mutex:FileLogger2::FileLogger2
+mutex:SqliteLogger::writerLoop
+mutex:SqliteLogger::callback
+mutex:SqliteLogger::SqliteLogger

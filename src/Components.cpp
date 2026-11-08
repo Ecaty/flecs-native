@@ -4,33 +4,38 @@
 namespace flecs_unity {
 
 void register_core(flecs::world& world) {
+    world.component<Clock>("Clock")
+        .member(&Clock::time, "time")
+        .member(&Clock::delta, "delta")
+        .member(&Clock::frame, "frame");
+    world.set<Clock>({});
     world.component<Position>("Position")
-        .member("x", &Position::x)
-        .member("y", &Position::y)
-        .member("z", &Position::z);
+        .member(&Position::x, "x")
+        .member(&Position::y, "y")
+        .member(&Position::z, "z");
     world.component<Rotation>("Rotation")
-        .member("x", &Rotation::x)
-        .member("y", &Rotation::y)
-        .member("z", &Rotation::z);
+        .member(&Rotation::x, "x")
+        .member(&Rotation::y, "y")
+        .member(&Rotation::z, "z");
     world.component<Scale>("Scale")
-        .member("x", &Scale::x)
-        .member("y", &Scale::y)
-        .member("z", &Scale::z);
+        .member(&Scale::x, "x")
+        .member(&Scale::y, "y")
+        .member(&Scale::z, "z");
     world.component<Color>("Color")
-        .member("r", &Color::r)
-        .member("g", &Color::g)
-        .member("b", &Color::b)
-        .member("a", &Color::a);
+        .member(&Color::r, "r")
+        .member(&Color::g, "g")
+        .member(&Color::b, "b")
+        .member(&Color::a, "a");
     world.component<Presented>("Presented")
-        .member("position", &Presented::position)
-        .member("rotation", &Presented::rotation)
-        .member("scale", &Presented::scale)
-        .member("color", &Presented::color)
-        .member("frame", &Presented::frame)
-        .member("primitive", &Presented::primitive)
-        .member("has_label", &Presented::has_label);
+        .member(&Presented::position, "position")
+        .member(&Presented::rotation, "rotation")
+        .member(&Presented::scale, "scale")
+        .member(&Presented::color, "color")
+        .member(&Presented::frame, "frame")
+        .member(&Presented::primitive, "primitive")
+        .member(&Presented::has_label, "has_label");
     world.component<Primitive>("Primitive")
-        .member("kind", &Primitive::kind);
+        .member(&Primitive::kind, "kind");
     world.component<Label>("Label")
         .member(flecs::String, "text");
 

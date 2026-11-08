@@ -4,6 +4,9 @@
 
 namespace flecs_unity {
 
+// Native time input for reactive Flecs Script; algorithms remain in scripts.
+struct Clock { double time = 0, delta = 0; std::int64_t frame = 0; };
+
 struct Position { float x, y, z; };
 struct Rotation { float x, y, z; };
 struct Scale { float x, y, z; };

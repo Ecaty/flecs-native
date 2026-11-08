@@ -21,6 +21,18 @@ typedef struct fu_view {
     int32_t primitive; /* -1 = empty transform; 0..5 = cube/sphere/capsule/cylinder/plane/quad */
     int32_t has_label;
 } fu_view;
+/* Runtime capability extension; world calls stay on the simulation thread. */
+FU_API int fu_cap_has(fu_context*,uint64_t entity,const char* type);
+FU_API void fu_cap_ack(fu_context*,uint64_t entity);
+FU_API int fu_cap_ready(fu_context*,uint64_t entity);
+FU_API void fu_caps_init(fu_context*);
+FU_API void fu_caps_destroy(fu_context*);
+FU_API void fu_caps_tick(fu_context*, double dt);
+FU_API void* fu_audio_create(const void* bank, int bytes, int sample_rate);
+FU_API void fu_audio_destroy(void* renderer);
+FU_API int fu_audio_note(void* renderer,int kind,int note,float velocity,int program,uint64_t sample);
+FU_API void fu_audio_render(void* renderer,float* output,int count);
+FU_API int fu_path_outline(const double* points,int count,double radius,double* output,int capacity,int* starts,int rings_capacity,int* ring_count);
 FU_API int32_t fu_abi_version(void);
 FU_API int32_t fu_view_size(void);
 FU_API const char *fu_version(void);
@@ -29,16 +41,38 @@ FU_API void fu_destroy(fu_context *ctx);
 FU_API int32_t fu_tick(fu_context *ctx, float dt);
 FU_API int32_t fu_run_script(fu_context *ctx, const char *code);
 FU_API int32_t fu_set_managed_script(fu_context *ctx, const char *path, const char *code);
+/* Owned UTF-8 source; NULL when the named managed module does not exist. */
+FU_API char *fu_managed_script_source(fu_context *ctx, const char *path);
 FU_API const char *fu_last_error(fu_context *ctx);
 FU_API int32_t fu_read_views(fu_context *ctx, fu_view *out, int32_t capacity);
 /* Presentation acknowledgements; never writes authoritative transform/color. */
 FU_API int32_t fu_write_presented(fu_context *ctx, const fu_view *views, int32_t count, int32_t frame);
+FU_API char *fu_entity_path(fu_context *ctx, uint64_t entity);
 FU_API char *fu_entity_name(fu_context *ctx, uint64_t entity);
 FU_API char *fu_label(fu_context *ctx, uint64_t entity);
 FU_API char *fu_query_json(fu_context *ctx, const char *expression);
 FU_API char *fu_entity_json(fu_context *ctx, const char *path);
 FU_API void fu_free(void *str);
 FU_API void *fu_world(fu_context *ctx); /* Advanced native extension point; main thread only. */
+FU_API char* fu_query_changes(fu_context*, const char* expression);
+FU_API int32_t fu_set_component_json(fu_context*, const char* entity, const char* type, const char* json);
+FU_API char* fu_component_json(fu_context*, uint64_t entity, const char* type);
+FU_API int32_t fu_read_query_data(fu_context*, const char* expression, const char* variable, uint64_t* entities, uint64_t* targets, void* values, int32_t size, int32_t capacity);
+FU_API uint64_t fu_define_metric(fu_context*, const char* name, const char* component, const char* member, int32_t counter);
+FU_API uint64_t fu_define_alert(fu_context*, const char* name, const char* expression, const char* message);
+FU_API int32_t fu_document(fu_context*, const char* path, const char* brief);
+FU_API uint64_t fu_lookup(fu_context*, const char* path);
+FU_API int32_t fu_component_size(fu_context*, uint64_t type);
+FU_API int32_t fu_read_component(fu_context*, uint64_t entity, uint64_t type, void* out, int32_t size);
+FU_API int32_t fu_write_components(fu_context*, uint64_t type, const uint64_t* entities, const void* data, int32_t size, int32_t count);
+FU_API int32_t fu_delete_entity(fu_context*, const char* path);
+FU_API int32_t fu_pointer(fu_context*, uint64_t target, float x, float y, uint32_t buttons, uint32_t modifiers);
+FU_API int32_t fu_keyboard(fu_context*, const char* key, int32_t down, int32_t repeat, uint32_t modifiers);
+FU_API int32_t fu_script_capture(fu_context*, const char* path);
+FU_API int32_t fu_script_undo(fu_context*, const char* path);
+FU_API int32_t fu_script_edit(fu_context*, const char* path, const char* entity, const char* type, const char* expr);
+FU_API char* fu_shell_json(fu_context*, const char* command);
+FU_API char* fu_bridge_diagnostics(fu_context*);
 #ifdef __cplusplus
 }
 #endif

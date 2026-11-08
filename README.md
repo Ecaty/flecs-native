@@ -1,9 +1,20 @@
 # Flecs native runtime
 
-Shared C++17 runtime for Ecaty-compatible frontends: reflected components, world lifecycle, runtime Flecs Script/queries, loopback Explorer/REST and a stable C ABI. Upstream Flecs v4.1.6 is vendored unmodified as `vendor/flecs.c`, `vendor/flecs.h` and its MIT license.
+Shared C++17 runtime for Ecaty-compatible frontends: reflected components, world lifecycle, runtime Flecs Script/queries, loopback Explorer/REST and a stable C ABI. Upstream Flecs master `68790666a02b1dc679cdc9bc2d19fc285ba4fe1b` (2026-11-05, newer than release v4.2.0) is vendored unmodified as `vendor/flecs.c`, `vendor/flecs.h` and its MIT license. `vendor/UPSTREAM.json` records provenance and SHA-256 hashes. The binary reports `4.2.0+6879066`. This pin includes the upstream Script Shell emit command; Ecaty does not yet expose that shell command through its apply_script tool.
 
 Build this module with an application that implements `flecs_unity::register_application(flecs::world&)`; Ecaty's `Native` build composes it with `ecaty-native` into one plugin. No Unity SDK is required in this source.
 
 Canonical project intent, ownership and continuation instructions: [Ecaty AGENTS](https://github.com/Ecaty/Ecaty/blob/main/AGENTS.md), [PROJECT](https://github.com/Ecaty/Ecaty/blob/main/docs/PROJECT.md), [DEVELOPMENT](https://github.com/Ecaty/Ecaty/blob/main/docs/DEVELOPMENT.md), [STATUS](https://github.com/Ecaty/Ecaty/blob/main/docs/STATUS.md).
 
 Current C ABI: **v2**, 80-byte view unchanged. `fu_write_presented` accepts batched presentation acknowledgements into reflected `Presented`; authoritative components remain native-owned. Match the native binary and managed bridge version. Label owns its reflected UTF-8 string through C++ lifecycle hooks, including prefab copies.
+
+The reflected Clock singleton (`time`, `delta`, `frame`) advances before pipeline progress. Upstream managed Script reactivity can read it and external component inputs to produce ongoing expressions without a separate interpreter. `fu_set_managed_script` uses upstream reload for existing modules; a parse failure preserves the prior module. Evaluation errors remain non-transactional. `fu_managed_script_source` returns an owned source string released with `fu_free` (or null when absent). This is an additive v2 export; use the matching library/bridge.
+
+See Ecaty's [runtime behavior workflow](https://github.com/Ecaty/Ecaty/blob/main/docs/RUNTIME-BEHAVIORS.md). External independently editable controls must not be seeded as outputs inside that same reactive module. Engine capabilities such as physics and audio still require native/adaptor integration.
+
+
+Runtime upgrade: Script Input/Shell are imported. Additive C ABI APIs support normalized pointer/keyboard events, cancellable `engine.wait` futures, source-preserving edit/undo, explicit scene-to-source capture, bounded cached/change-aware queries, runtime POD layout validation and binary data/query streams. Reflected JSON handles selected non-POD state without copying owning C++ pointers. Metrics/Alerts/Doc wrappers let applications describe and monitor runtime-defined components. All APIs remain on the owning thread. Shell is developer-native functionality; it is not an operating-system shell or an unrestricted AI tool.
+
+Ecaty's current [runtime-engine workflow](https://github.com/Ecaty/Ecaty/blob/main/docs/RUNTIME-ENGINE.md) uses independent Script templates and explicit selected-state persistence. New underlying solver/plugin functionality still requires adapters.
+
+Portable capability module: src/RuntimeCapabilities.cpp links pinned BehaviorTree.CPP (MIT), TinySoundFont (MIT) and Clipper2 (Boost Software License). Each vendor directory contains LICENSE and ECATY-UPSTREAM.json with commit/archive hash. Flecs remains the same unmodified two-file upstream distribution. Runtime trees expose reflected NativeTree/NativeTreeResult; generic dependencies and footprints use reflected ECS input. Audio renderers are separate from live world access and share immutable sample-bank data. Additive fu_audio_*, fu_cap_*, fu_path_outline and fu_entity_path exports preserve C ABI v2. MSVC/CMake is verified; new platform/MinGW paths require target tests. See the root runtime-capabilities document for available leaf nodes, lifetime, persistence and limitations.

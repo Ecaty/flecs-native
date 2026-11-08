@@ -1,0 +1,56 @@
+name: cmake Windows
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        # Pinned to windows-2022: windows-latest now ships Visual Studio 2026
+        # (MSVC 19.5), which makes Conan request the "Visual Studio 18 2026"
+        # generator that the installed CMake cannot create.
+        os: [windows-2022]
+        build_type: [Release, Debug]
+
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Install Conan
+      id: conan
+      uses: turtlebrowser/get-conan@main
+
+    - name: Create default profile
+      run: conan profile detect
+
+    - name: Install conan dependencies
+      run: conan install conanfile.py -s build_type=${{ matrix.build_type }} --build=missing --settings:host compiler.cppstd=17
+
+    - name: Normalize build type
+      shell: bash
+      run: echo "BUILD_TYPE_LOWERCASE=$(echo "${{ matrix.build_type }}" | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
+    - name: Configure CMake
+      shell: bash
+      run: cmake --preset conan-default
+
+    - name: Build
+      shell: bash
+      run: cmake --build --preset conan-${{ env.BUILD_TYPE_LOWERCASE }}
+
+    - name: Run tests
+      working-directory: ${{ github.workspace }}/build
+      # Some tests assert tight wall-clock timing, which the shared runners can
+      # not always meet: --repeat until-pass absorbs that flakiness (as on macOS).
+      run: |
+        $env:PATH += ";${{ github.workspace }}\build\${{ matrix.build_type }}"
+        ctest -C ${{ matrix.build_type }} --output-on-failure --repeat until-pass:3
