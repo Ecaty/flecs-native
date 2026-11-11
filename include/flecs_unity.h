@@ -76,6 +76,11 @@ FU_API char* fu_bridge_diagnostics(fu_context*);
 
 /* ABI 3 additions. */
 #define FU_REST_READ_ONLY 1u /* REST refuses requests that modify the world */
+/* Bisect switches (fu_create_ex flags): each restores one pre-ABI-3 behaviour. Diagnostics only. */
+#define FU_COMPAT_NO_SCRIPT_CACHE 0x100u /* fu_run_script parses every call */
+#define FU_COMPAT_FLUSH_QUERIES 0x200u /* source changes drop every compiled query */
+#define FU_COMPAT_ENTITY_VIEWS 0x400u /* fu_read_views uses the per-entity ABI 2 read */
+#define FU_COMPAT_MASK 0x700u
 /* Like fu_create, with flags. A busy REST port no longer fails creation; see fu_rest_status. */
 FU_API fu_context *fu_create_ex(uint16_t port, uint32_t flags);
 /* 1 REST running, 0 not requested, -1 could not start (port in use; fu_last_error has details). */
