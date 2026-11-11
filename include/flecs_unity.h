@@ -73,6 +73,23 @@ FU_API int32_t fu_script_undo(fu_context*, const char* path);
 FU_API int32_t fu_script_edit(fu_context*, const char* path, const char* entity, const char* type, const char* expr);
 FU_API char* fu_shell_json(fu_context*, const char* command);
 FU_API char* fu_bridge_diagnostics(fu_context*);
+
+/* ABI 3 additions. */
+#define FU_REST_READ_ONLY 1u /* REST refuses requests that modify the world */
+/* Like fu_create, with flags. A busy REST port no longer fails creation; see fu_rest_status. */
+FU_API fu_context *fu_create_ex(uint16_t port, uint32_t flags);
+/* 1 REST running, 0 not requested, -1 could not start (port in use; fu_last_error has details). */
+FU_API int32_t fu_rest_status(fu_context*);
+/* Stable query handles: valid until destroyed; rebuilt internally only when a referenced component is redefined. */
+FU_API int32_t fu_query_create(fu_context*, const char* expression); /* > 0 handle, -1 invalid expression */
+FU_API void fu_query_destroy(fu_context*, int32_t handle);
+FU_API char* fu_query_json_h(fu_context*, int32_t handle);
+FU_API int32_t fu_query_changed(fu_context*, int32_t handle); /* 1 changed since the last read of this handle, 0 unchanged, -1 error */
+FU_API int32_t fu_query_read_data(fu_context*, int32_t handle, const char* variable, uint64_t* entities, uint64_t* targets, void* values, int32_t size, int32_t capacity);
+/* Copy UTF-8 into a caller buffer (no terminator). Return the full length, which may exceed capacity, or -1. */
+FU_API int32_t fu_component_json_into(fu_context*, uint64_t entity, uint64_t type, char* out, int32_t capacity);
+FU_API int32_t fu_label_into(fu_context*, uint64_t entity, char* out, int32_t capacity);
+FU_API int32_t fu_name_into(fu_context*, uint64_t entity, char* out, int32_t capacity);
 #ifdef __cplusplus
 }
 #endif
