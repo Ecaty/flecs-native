@@ -65,6 +65,9 @@ struct fu_context {
     void sources_changed() {
         type_sizes.clear();
         clear_parsed();
+        // Keep the queries, but report every one as changed once: consumers of change detection (for example model
+        // reconciliation) relied on a full refresh after each source change when all queries were flushed.
+        for (auto& slot : slots) if (slot.used) slot.rebuilt = true;
     }
 
     ~fu_context() {
@@ -499,6 +502,7 @@ char* fu_query_json_h(fu_context* ctx, int32_t handle) {
     auto* slot = fu_slot(ctx, handle);
     auto* query = slot ? fu_slot_query(ctx, *slot) : nullptr;
     if (!query) return nullptr;
+    slot->fresh = slot->rebuilt = false; // a read consumes the pending change report
     auto it = ecs_query_iter(ctx->world, query);
     return ecs_iter_to_json(&it, nullptr);
 }
@@ -687,6 +691,7 @@ int32_t fu_query_read_data(fu_context* ctx, int32_t handle, const char* variable
     auto* slot = fu_slot(ctx, handle);
     auto* q = slot ? fu_slot_query(ctx, *slot) : nullptr;
     if (!q) return -1;
+    slot->fresh = slot->rebuilt = false; // a read consumes the pending change report
     int var = variable && *variable ? ecs_query_find_var(q, variable) : -1;
     if (variable && *variable && var < 0) return -1;
     auto it = ecs_query_iter(ctx->world, q); int total = 0;
