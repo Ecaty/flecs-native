@@ -27,8 +27,6 @@ struct fu_context {
     // Members are destroyed in reverse order: query before world.
     flecs::world world;
     flecs::query<const Position> views;
-    flecs::query<const Position> legacy_views; // FU_COMPAT_ENTITY_VIEWS only
-    uint32_t compat = 0; // FU_COMPAT_* switches that restore pre-ABI-3 behaviour for bisecting
     ecs_http_server_t* rest_server = nullptr;
     int32_t rest_status = 0; // 1 running, 0 off, -1 could not start (port in use)
     char error[4096]{};
@@ -70,9 +68,6 @@ struct fu_context {
         // Keep the queries, but report every one as changed once: consumers of change detection (for example model
         // reconciliation) relied on a full refresh after each source change when all queries were flushed.
         for (auto& slot : slots) if (slot.used) slot.rebuilt = true;
-        // Bisect switch: drop every compiled query like ABI 2 did; each slot recompiles on its next use.
-        if (compat & FU_COMPAT_FLUSH_QUERIES)
-            for (auto& slot : slots) if (slot.used) release_query(slot);
     }
 
     ~fu_context() {
@@ -84,7 +79,6 @@ struct fu_context {
         slots.clear();
         if (rest_server) ecs_rest_server_fini(rest_server);
         if (views) views.destruct(); // Named query; explicitly clear its handle.
-        if (legacy_views) legacy_views.destruct();
     }
 };
 
@@ -174,9 +168,6 @@ fu_context* fu_create_ex(uint16_t port, uint32_t flags) {
             .with<Label>().optional().in()
             .cache_kind(flecs::QueryCacheAuto).build();
         if (!ctx->views) throw std::runtime_error("Could not create UnityViews query");
-        ctx->compat = flags & FU_COMPAT_MASK;
-        if (ctx->compat & FU_COMPAT_ENTITY_VIEWS)
-            ctx->legacy_views = ctx->world.query_builder<const Position>().cache_kind(flecs::QueryCacheAuto).build();
 
         if (port) {
             // REST structural edits run outside progress, not in a system callback.
@@ -242,7 +233,7 @@ int32_t fu_run_script(fu_context* ctx, const char* code) {
     ecs_script_eval_result_t result{};
     const size_t length = std::strlen(code);
     int rc = -1;
-    if (length > 4096 || (ctx->compat & FU_COMPAT_NO_SCRIPT_CACHE)) {
+    if (length > 4096) {
         rc = ecs_script_run(ctx->world, "Unity command", code, &result);
     } else {
         std::string key(code, length);
@@ -304,34 +295,8 @@ char* fu_managed_script_source(fu_context* ctx, const char* path) {
     return script && script->code ? ecs_os_strdup(script->code) : nullptr;
 }
 
-// ABI 2 per-entity view read, kept only behind FU_COMPAT_ENTITY_VIEWS while bisecting.
-static int32_t fu_read_views_legacy(fu_context* ctx, fu_view* out, int32_t capacity) {
-    int32_t total = 0;
-    ctx->legacy_views.each([&](flecs::entity entity, const Position& position) {
-        const auto index = total++;
-        if (!out || index >= capacity) return;
-        const auto* rotation = entity.try_get<Rotation>();
-        const auto* scale = entity.try_get<Scale>();
-        const auto* color = entity.try_get<Color>();
-        const auto* shape = entity.try_get<Primitive>();
-        fu_view view{};
-        view.entity = entity.id();
-        view.parent = entity.target(flecs::ChildOf).id();
-        view.px = position.x; view.py = position.y; view.pz = position.z;
-        if (rotation) { view.rx = rotation->x; view.ry = rotation->y; view.rz = rotation->z; }
-        view.sx = scale ? scale->x : 1; view.sy = scale ? scale->y : 1; view.sz = scale ? scale->z : 1;
-        view.r = color ? color->r : 1; view.g = color ? color->g : 1;
-        view.b = color ? color->b : 1; view.a = color ? color->a : 1;
-        view.primitive = shape ? shape->kind : -1;
-        view.has_label = entity.has<Label>() ? 1 : 0;
-        out[index] = view;
-    });
-    return total;
-}
-
 int32_t fu_read_views(fu_context* ctx, fu_view* out, int32_t capacity) {
     if (!ctx || capacity < 0) return -1;
-    if (ctx->compat & FU_COMPAT_ENTITY_VIEWS) return fu_read_views_legacy(ctx, out, capacity);
     ecs_world_t* w = ctx->world.c_ptr();
     int32_t total = 0;
     ecs_iter_t it = ecs_query_iter(w, ctx->views.c_ptr());
@@ -705,12 +670,12 @@ char* fu_bridge_diagnostics(fu_context* ctx) {
     char result[512];
     std::snprintf(result, sizeof(result),
         "{\"queryBuilds\":%llu,\"queryHits\":%llu,\"queryRebuilds\":%llu,\"cachedQueries\":%zu,\"binaryReads\":%llu,"
-        "\"binaryWrites\":%llu,\"scriptParses\":%llu,\"scriptReuses\":%llu,\"rest\":%d,\"compat\":%u}",
+        "\"binaryWrites\":%llu,\"scriptParses\":%llu,\"scriptReuses\":%llu,\"rest\":%d}",
         static_cast<unsigned long long>(ctx->query_builds), static_cast<unsigned long long>(ctx->query_hits),
         static_cast<unsigned long long>(ctx->query_rebuilds), live,
         static_cast<unsigned long long>(ctx->binary_reads), static_cast<unsigned long long>(ctx->binary_writes),
         static_cast<unsigned long long>(ctx->script_parses), static_cast<unsigned long long>(ctx->script_reuses),
-        static_cast<int>(ctx->rest_status), static_cast<unsigned>(ctx->compat));
+        static_cast<int>(ctx->rest_status));
     return ecs_os_strdup(result);
 }
 
