@@ -431,6 +431,18 @@ static ecs_query_t* fu_slot_query(fu_context* ctx, fu_context::QuerySlot& slot) 
     }
     slot.entity = slot.query->entity;
     for (int8_t i = 0; i < slot.query->field_count; ++i) slot.ids.push_back(slot.query->ids[i]);
+    // Fixed entities in terms (for example a source in `Model(path)`) must also still exist: a recreated entity gets a
+    // new id, and the old query would silently match nothing.
+    for (int8_t i = 0; i < slot.query->term_count; ++i) {
+        const ecs_term_t& term = slot.query->terms[i];
+        for (const ecs_term_ref_t* ref : {&term.src, &term.first, &term.second}) {
+            if (!(ref->id & EcsIsEntity)) continue;
+            const ecs_entity_t e = ECS_TERM_REF_ID(ref);
+            if (!e || e == EcsWildcard || e == EcsAny || e == EcsThis || e == EcsVariable) continue;
+            const ecs_entity_t alive = ecs_get_alive(w, static_cast<uint32_t>(e));
+            if (alive) slot.ids.push_back(alive);
+        }
+    }
     if (slot.query->cache_kind != EcsQueryCacheNone) ecs_query_changed(slot.query); // change tracking starts here
     ++ctx->query_builds;
     return slot.query;
