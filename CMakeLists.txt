@@ -57,6 +57,14 @@ set(CLIPPER2_TESTS OFF CACHE BOOL "" FORCE)
 set(CLIPPER2_USINGZ OFF CACHE STRING "" FORCE)
 add_subdirectory(vendor/behaviortree EXCLUDE_FROM_ALL)
 add_subdirectory(vendor/clipper2/CPP EXCLUDE_FROM_ALL)
+# BehaviorTree.CPP 4.11.1+ forces -Werror / /WX on its own target. Keep its warnings visible but
+# non-fatal, so a new compiler warning in vendor code cannot break our build (GCC 15
+# -Wnull-dereference in bt_factory.cpp). The later flag wins on the command line.
+if(MSVC)
+  target_compile_options(behaviortree_cpp PRIVATE /WX-)
+else()
+  target_compile_options(behaviortree_cpp PRIVATE -Wno-error)
+endif()
 target_sources(flecs_unity_core PRIVATE src/RuntimeCapabilities.cpp)
 target_include_directories(flecs_unity_core PRIVATE vendor/tinysoundfont)
 target_link_libraries(flecs_unity_core PUBLIC behaviortree_cpp Clipper2)

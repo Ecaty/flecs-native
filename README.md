@@ -1,6 +1,6 @@
 # Flecs native runtime
 
-Shared C++17 runtime for engine frontends: reflected components, world lifecycle, runtime Flecs Script/queries, loopback Explorer/REST and a stable C ABI. Upstream Flecs master `68790666a02b1dc679cdc9bc2d19fc285ba4fe1b` (2026-11-05, newer than release v4.2.0) is the submodule `vendor/flecs` (fork Ecaty/flecs, unmodified); CMake builds its `distr/flecs.c` and copies `distr/flecs.h` into the build tree, and the submodule commit is the pin. The binary reports `4.2.0+6879066`. This pin includes the upstream Script Shell emit command; Ecaty does not yet expose that shell command through its apply_script tool.
+Shared C++17 runtime for engine frontends: reflected components, world lifecycle, runtime Flecs Script/queries, loopback Explorer/REST and a stable C ABI. Upstream Flecs (master after release v4.2.0; the submodule commit is the pin) is the submodule `vendor/flecs` (fork Ecaty/flecs, unmodified); CMake builds its `distr/flecs.c` and copies `distr/flecs.h` into the build tree, and the submodule commit is the pin. The binary reports `FLECS_VERSION+<short pinned commit>`. This pin includes the upstream Script Shell emit command; Ecaty does not yet expose that shell command through its apply_script tool.
 
 Build this module with an application that implements `flecs_unity::register_application(flecs::world&)`; Ecaty's `Native` build composes it with `ecaty-native` into one plugin. No Unity SDK is required in this source.
 
