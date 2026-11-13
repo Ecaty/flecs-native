@@ -139,7 +139,7 @@ fu_context* fu_create_ex(uint16_t port, uint32_t flags) {
     try {
         auto ctx = std::make_unique<fu_context>();
         auto* w = ctx->world.c_ptr();
-        ecs_doc_set_name(w, EcsWorld, "Ecaty");
+        ecs_doc_set_name(w, EcsWorld, "World");
         // Units must precede statistics reflection, also on repeated world creation.
         ECS_IMPORT(w, FlecsUnits);
         ECS_IMPORT(w, FlecsMetrics);
