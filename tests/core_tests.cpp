@@ -91,6 +91,34 @@ void json_writes_report_unknown_names() {
     fu_destroy(ctx);
 }
 
+struct EventProbe { int runs = 0; ecs_entity_t entity = 0; fu_event fact{}; };
+
+void events_reach_observers_as_parameters() {
+    fu_context* ctx = fu_create(0);
+    ecs_world_t* world = world_of(ctx);
+    ecs_entity_t touched = ecs_new(world);
+    ecs_entity_t subject = ecs_new(world), other = ecs_new(world);
+    EventProbe probe;
+    ecs_observer_desc_t desc = {};
+    desc.query.terms[0].id = EcsAny;
+    desc.events[0] = touched;
+    desc.callback = [](ecs_iter_t* it) {
+        auto* seen = static_cast<EventProbe*>(it->ctx);
+        ++seen->runs;
+        seen->entity = it->count ? it->entities[0] : 0;
+        if (it->param) seen->fact = *static_cast<const fu_event*>(it->param);
+    };
+    desc.ctx = &probe;
+    expect(ecs_observer_init(world, &desc) != 0, "setup: an observer for a custom event on any component");
+    fu_event fact{touched, subject, other, 1.5f, -2.0f, 3.25f, 0.5f};
+    expect(fu_emit_events(ctx, &fact, 1) == 1, "one live event is delivered");
+    expect(probe.runs == 1, "the observer ran during the call");
+    expect(probe.entity == subject, "the observer saw the event's entity");
+    expect(probe.fact.event == touched && probe.fact.entity == subject && probe.fact.other == other, "the parameter carries event, entity and other");
+    expect(probe.fact.x == 1.5f && probe.fact.y == -2.0f && probe.fact.z == 3.25f && probe.fact.value == 0.5f, "the parameter carries x, y, z and value");
+    fu_destroy(ctx);
+}
+
 } // namespace
 
 int main() {
@@ -98,6 +126,7 @@ int main() {
     templates_compare_their_props();
     worlds_keep_separate_module_state();
     json_writes_report_unknown_names();
+    events_reach_observers_as_parameters();
     std::printf("%s (%d failed)\n", failures ? "FAILED" : "PASSED", failures);
     return failures;
 }
