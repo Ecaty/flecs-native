@@ -87,6 +87,9 @@ FU_API int32_t fu_query_read_data(fu_context*, int32_t handle, const char* varia
 FU_API int32_t fu_component_json_into(fu_context*, uint64_t entity, uint64_t type, char* out, int32_t capacity);
 FU_API int32_t fu_label_into(fu_context*, uint64_t entity, char* out, int32_t capacity);
 FU_API int32_t fu_name_into(fu_context*, uint64_t entity, char* out, int32_t capacity);
+/* One-off query for tools: no cache, no query slot. limit > 0 returns at most that many rows. Owned JSON, or NULL
+   when the expression is invalid (fu_last_error has details). */
+FU_API char* fu_query_once_json(fu_context*, const char* expression, int32_t limit);
 #ifdef __cplusplus
 }
 #endif

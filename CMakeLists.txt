@@ -23,9 +23,20 @@ else()
   set(FLECS_UPSTREAM_SHORT "unknown")
 endif()
 message(STATUS "Flecs submodule revision: ${FLECS_UPSTREAM_SHORT}")
-add_library(flecs_unity_core OBJECT src/flecs_unity.cpp src/Components.cpp src/TypeGuard.cpp "${FLECS_DIR}/distr/flecs.c")
+# Our own sources (vendor code is compiled as it ships).
 set(FU_CORE_SOURCES src/flecs_unity.cpp src/Components.cpp src/TypeGuard.cpp
   src/Capabilities.cpp src/Geometry.cpp src/BehaviorTrees.cpp src/Audio.cpp)
+add_library(flecs_unity_core OBJECT src/flecs_unity.cpp src/Components.cpp src/TypeGuard.cpp "${FLECS_DIR}/distr/flecs.c")
+# -DFU_WARNINGS=ON compiles our sources with warnings. Warnings that vendor headers raise inside these files are
+# expected; a warning located in src/ is ours to fix (the CI step checks for those).
+option(FU_WARNINGS "Compile the core's own sources with compiler warnings" OFF)
+if(FU_WARNINGS)
+  if(MSVC)
+    set_source_files_properties(${FU_CORE_SOURCES} PROPERTIES COMPILE_OPTIONS "/W4")
+  else()
+    set_source_files_properties(${FU_CORE_SOURCES} PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra")
+  endif()
+endif()
 # Keep only flecs.h on the include path (copied), never the Flecs repository root or vendor/.
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/flecs_include")
 configure_file("${FLECS_DIR}/distr/flecs.h" "${CMAKE_CURRENT_BINARY_DIR}/flecs_include/flecs.h" COPYONLY)
@@ -62,3 +73,13 @@ add_subdirectory(vendor/clipper2/CPP EXCLUDE_FROM_ALL)
 target_sources(flecs_unity_core PRIVATE src/Capabilities.cpp src/Geometry.cpp src/BehaviorTrees.cpp src/Audio.cpp)
 target_include_directories(flecs_unity_core PRIVATE vendor/tinysoundfont)
 target_link_libraries(flecs_unity_core PUBLIC behaviortree_cpp Clipper2)
+
+# -DFU_BUILD_TESTS=ON builds flecs_unity_core_tests: checks for logic the C ABI smokes cannot reach directly.
+option(FU_BUILD_TESTS "Build the core test executable" OFF)
+if(FU_BUILD_TESTS)
+  add_executable(flecs_unity_core_tests tests/core_tests.cpp)
+  target_link_libraries(flecs_unity_core_tests PRIVATE flecs_unity_core)
+  if(MINGW)
+    target_link_options(flecs_unity_core_tests PRIVATE -static -static-libgcc -static-libstdc++)
+  endif()
+endif()

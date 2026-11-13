@@ -7,7 +7,9 @@
 #include <vector>
 
 // Footprints: the outline of a spline stroke, or the union of a filled area, as NativeFootprint JSON on the same
-// entity. Recomputed when a CapSpline value is set and its input really changed; nothing runs for unchanged splines.
+// entity. An observer notes which splines were set (Flecs locks tables while it reports a change, so the result
+// cannot be written there); they are recomputed once per frame in PostUpdate, and only if their input really
+// changed. Nothing runs for unchanged splines.
 namespace flecs_unity {
 namespace {
 
@@ -64,20 +66,26 @@ std::string footprint_json(const SplineInput& input) {
 
 void spline_set(ecs_iter_t* it) {
     auto* geometry = static_cast<GeometryModule*>(it->ctx);
-    flecs::world world(it->world);
-    for (int i = 0; i < it->count; ++i) {
-        const ecs_entity_t entity = it->entities[i];
-        const void* data = ecs_get_id(real_world(it->world), entity, geometry->spline);
+    for (int i = 0; i < it->count; ++i) geometry->changed.push_back(it->entities[i]);
+}
+
+void update_footprints(ecs_world_t* world, GeometryModule& geometry) {
+    if (geometry.changed.empty()) return;
+    std::vector<ecs_entity_t> changed;
+    changed.swap(geometry.changed);
+    flecs::world view(world);
+    for (const ecs_entity_t entity : changed) {
+        const void* data = ecs_is_alive(world, entity) ? ecs_get_id(world, entity, geometry.spline) : nullptr;
         if (!data) continue;
-        const SplineInput input = read_spline(real_world(it->world), geometry->spline, data);
+        const SplineInput input = read_spline(world, geometry.spline, data);
         const std::string key = input.points + '|' + std::to_string(input.width) + (input.closed ? "|closed" : "|open") +
             (input.fill ? "|fill" : "|stroke");
-        auto& last = geometry->inputs[entity];
+        auto& last = geometry.inputs[entity];
         if (last == key) continue;
         last = key;
         NativeFootprint footprint;
         footprint.text = ecs_os_strdup(footprint_json(input).c_str());
-        world.entity(entity).set<NativeFootprint>(footprint);
+        view.entity(entity).set<NativeFootprint>(footprint);
     }
 }
 
@@ -94,6 +102,7 @@ void watch_spline_type(ecs_world_t* world, GeometryModule& geometry) {
     geometry.spline = type;
     geometry.observer = 0;
     geometry.inputs.clear();
+    geometry.changed.clear();
     if (!type) return;
     geometry.observer = ecs_new(world);
     ecs_observer_desc_t set{};
@@ -120,10 +129,14 @@ GeometryModule::GeometryModule(flecs::world& world) {
     world.component<NativeFootprint>("NativeFootprint").member(flecs::String, "json");
     ecs_set_scope(world, scope);
     world.module<GeometryModule>("::core::geometry");
-    world.system("WatchSplineType")
-        .kind(flecs::OnLoad)
+    world.system("UpdateFootprints")
+        .kind(flecs::PostUpdate)
         .immediate()
-        .run([this](flecs::iter& it) { watch_spline_type(real_world(it.world()), *this); });
+        .run([this](flecs::iter& it) {
+            ecs_world_t* world = real_world(it.world());
+            watch_spline_type(world, *this);
+            update_footprints(world, *this);
+        });
 }
 
 } // namespace flecs_unity

@@ -13,13 +13,15 @@
 // observers and module state live inside the module, so the Explorer groups them (core.cap, core.tree, core.geometry).
 //
 // Phase map, used by every native module (docs/ENGINE-PLAN.md section 3.2):
-//   OnLoad      facts from Unity: input, contacts, arrivals; watching for types defined at runtime
+//   OnLoad      facts from Unity: input, contacts, arrivals
 //   PreUpdate   intents and timers
 //   OnUpdate    simulation: motion, forces, rules, behaviour trees
 //   PostUpdate  derived state
 //   PreStore    snapshots for Unity
-// A reaction to a changed component (capability readiness, footprints) is an observer, not a per-frame system:
-// an idle world must not pay for content it is not changing.
+// A reaction to a changed component (capability readiness, footprints) starts in an observer, not in a per-frame
+// query: an idle world must not pay for content it is not changing. Flecs locks tables while it reports a change,
+// so an observer only notes what changed; a system applies it once per frame and returns at once when nothing is
+// noted.
 namespace flecs_unity {
 
 // Binding contract shared with Script (CapabilitySchema.flecs repeats these layouts for older saves; the type guard
@@ -76,6 +78,7 @@ struct GeometryModule {
     explicit GeometryModule(flecs::world& world);
     flecs::entity_t spline = 0, observer = 0;
     std::unordered_map<flecs::entity_t, std::string> inputs; // last input per entity; unchanged input is not recomputed
+    std::vector<flecs::entity_t> changed;                     // splines set since the last frame
 };
 
 // Behaviour trees (BehaviorTree.CPP) defined as component data.

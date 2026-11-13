@@ -40,8 +40,10 @@ struct fu_context {
         std::string expression;
         std::vector<ecs_id_t> ids;
         uint16_t generation = 1;
+        uint64_t last_used = 0; // for named slots: the least recently used one is replaced when all are taken
         bool used = false, named = false, fresh = false, rebuilt = false;
     };
+    uint64_t query_clock = 0;
     std::vector<QuerySlot> slots;
     std::unordered_map<std::string, int32_t> named_queries;
     std::unordered_map<ecs_entity_t, int32_t> type_sizes;
@@ -63,13 +65,12 @@ struct fu_context {
         for (auto& entry : parsed) ecs_script_free(entry.second);
         parsed.clear();
     }
-    // Sources may redefine runtime types: drop derived caches. Query slots validate themselves on use.
+    // Sources may redefine runtime types: drop derived caches. Query slots validate themselves on use, and a source
+    // change is reported to a handle only through what it did to the data: entities it added, removed or wrote in
+    // matched tables (Flecs change detection), or a referenced type or entity it replaced (the slot is rebuilt).
     void sources_changed() {
         type_sizes.clear();
         clear_parsed();
-        // Keep the queries, but report every one as changed once: consumers of change detection (for example model
-        // reconciliation) relied on a full refresh after each source change when all queries were flushed.
-        for (auto& slot : slots) if (slot.used) slot.rebuilt = true;
     }
 
     ~fu_context() {
@@ -520,14 +521,30 @@ void fu_query_destroy(fu_context* ctx, int32_t handle) {
 // String-keyed path for tools: each expression maps to a slot that survives source reloads.
 static int32_t fu_named_query(fu_context* ctx, const char* expression) {
     const auto found = ctx->named_queries.find(expression);
-    if (found != ctx->named_queries.end() && fu_slot(ctx, found->second)) return found->second;
+    if (found != ctx->named_queries.end()) {
+        if (auto* slot = fu_slot(ctx, found->second)) {
+            slot->last_used = ++ctx->query_clock;
+            return found->second;
+        }
+    }
+    // All named slots taken: replace only the least recently used one, so one-off expressions cannot flush the
+    // queries that features read every frame.
     if (ctx->named_queries.size() >= 32) {
-        for (auto& entry : ctx->named_queries)
-            if (auto* slot = fu_slot(ctx, entry.second)) fu_slot_destroy(ctx, *slot);
-        ctx->named_queries.clear();
+        auto oldest = ctx->named_queries.end();
+        uint64_t oldest_use = UINT64_MAX;
+        for (auto entry = ctx->named_queries.begin(); entry != ctx->named_queries.end(); ++entry) {
+            const auto* slot = fu_slot(ctx, entry->second);
+            const uint64_t use = slot ? slot->last_used : 0;
+            if (use < oldest_use) { oldest_use = use; oldest = entry; }
+        }
+        if (auto* slot = fu_slot(ctx, oldest->second)) fu_slot_destroy(ctx, *slot);
+        ctx->named_queries.erase(oldest);
     }
     const int32_t handle = fu_slot_create(ctx, expression, true);
-    if (handle > 0) ctx->named_queries[expression] = handle;
+    if (handle > 0) {
+        ctx->named_queries[expression] = handle;
+        if (auto* slot = fu_slot(ctx, handle)) slot->last_used = ++ctx->query_clock;
+    }
     return handle;
 }
 char* fu_query_json_h(fu_context* ctx, int32_t handle) {
@@ -555,6 +572,29 @@ char* fu_query_json(fu_context* ctx, const char* expression) {
     if (!ctx || !expression) return nullptr;
     const int32_t handle = fu_named_query(ctx, expression);
     return handle > 0 ? fu_query_json_h(ctx, handle) : nullptr;
+}
+
+// One-off query for tools and the AI: evaluated without a cache and without taking a query slot.
+char* fu_query_once_json(fu_context* ctx, const char* expression, int32_t limit) {
+    if (!ctx || !expression) return nullptr;
+    ecs_query_desc_t desc{};
+    desc.expr = expression;
+    desc.cache_kind = EcsQueryCacheNone;
+    ecs_query_t* query = ecs_query_init(ctx->world, &desc);
+    if (!query) {
+        std::snprintf(ctx->error, sizeof(ctx->error), "Invalid query: %s", expression);
+        return nullptr;
+    }
+    ecs_iter_t it = ecs_query_iter(ctx->world, query);
+    char* json = nullptr;
+    if (limit > 0) {
+        ecs_iter_t page = ecs_page_iter(&it, 0, limit);
+        json = ecs_iter_to_json(&page, nullptr);
+    } else {
+        json = ecs_iter_to_json(&it, nullptr);
+    }
+    ecs_query_fini(query);
+    return json;
 }
 
 char* fu_query_changes(fu_context* ctx, const char* expression) {
