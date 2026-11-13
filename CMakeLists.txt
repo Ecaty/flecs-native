@@ -23,7 +23,7 @@ else()
   set(FLECS_UPSTREAM_SHORT "unknown")
 endif()
 message(STATUS "Flecs submodule revision: ${FLECS_UPSTREAM_SHORT}")
-add_library(flecs_unity_core OBJECT src/flecs_unity.cpp src/Components.cpp "${FLECS_DIR}/distr/flecs.c")
+add_library(flecs_unity_core OBJECT src/flecs_unity.cpp src/Components.cpp src/TypeGuard.cpp "${FLECS_DIR}/distr/flecs.c")
 # Keep only flecs.h on the include path (copied), never the Flecs repository root or vendor/.
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/flecs_include")
 configure_file("${FLECS_DIR}/distr/flecs.h" "${CMAKE_CURRENT_BINARY_DIR}/flecs_include/flecs.h" COPYONLY)

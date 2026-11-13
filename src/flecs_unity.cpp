@@ -11,6 +11,7 @@
 #endif
 #include "flecs_unity.h"
 #include "FlecsComponents.hpp"
+#include "TypeGuard.hpp"
 #include <cmath>
 #include <cstdio>
 #include <exception>
@@ -137,6 +138,7 @@ static bool fu_port_available(uint16_t port) {
 fu_context* fu_create_ex(uint16_t port, uint32_t flags) {
     create_error[0] = 0;
     try {
+        install_layout_fault_hook(); // before the first world: the OS API is fixed once a world exists
         auto ctx = std::make_unique<fu_context>();
         auto* w = ctx->world.c_ptr();
         ecs_doc_set_name(w, EcsWorld, "World");
@@ -226,14 +228,34 @@ int32_t fu_tick(fu_context* ctx, float dt) {
     return running ? 0 : -1;
 }
 
+// Refuses a script that would change the layout of a type entities already use (TypeGuard.hpp).
+// Returns false with ctx->error set. `owner` is the managed script being reloaded, or 0.
+static bool fu_types_allowed(fu_context* ctx, const char* code, ecs_entity_t owner, bool* declares_types = nullptr) {
+    const TypeCheck check = check_type_redeclaration(ctx->world, code, owner);
+    if (declares_types) *declares_types = check.declares_types;
+    if (check.problem.empty()) return true;
+    std::snprintf(ctx->error, sizeof(ctx->error), "%s", check.problem.c_str());
+    return false;
+}
+// Second line of defence for what the check above cannot see (nested declarations, member entities): Flecs reported
+// that a component in use changed. The script ran, so the caller is told the world may be inconsistent.
+static int fu_layout_fault(fu_context* ctx, uint64_t faults_before, int rc) {
+    if (layout_faults() == faults_before) return rc;
+    std::snprintf(ctx->error, sizeof(ctx->error),
+        "A component that entities use changed layout during this script. Stored values may be wrong; reload the world.");
+    return -1;
+}
+
 // Repeated commands reuse their parsed script. The cache is dropped whenever managed sources change,
 // because a parse resolves names that a source reload may redefine.
 int32_t fu_run_script(fu_context* ctx, const char* code) {
     if (!ctx || !code) return -1;
     ecs_script_eval_result_t result{};
     const size_t length = std::strlen(code);
+    const uint64_t faults = layout_faults();
     int rc = -1;
     if (length > 4096) {
+        if (!fu_types_allowed(ctx, code, 0)) return -1;
         rc = ecs_script_run(ctx->world, "Unity command", code, &result);
     } else {
         std::string key(code, length);
@@ -243,22 +265,34 @@ int32_t fu_run_script(fu_context* ctx, const char* code) {
             script = found->second;
             ++ctx->script_reuses;
         } else {
-            script = ecs_script_parse(ctx->world, "Unity command", code, nullptr, &result);
-            ++ctx->script_parses;
-            if (script) {
-                if (ctx->parsed.size() >= 64) ctx->clear_parsed();
-                ctx->parsed.emplace(std::move(key), script);
+            // Checked once per text: a script that declares types is never cached, so it is checked on every run.
+            bool declares_types = false;
+            if (!fu_types_allowed(ctx, code, 0, &declares_types)) return -1;
+            if (declares_types) {
+                rc = ecs_script_run(ctx->world, "Unity command", code, &result);
+            } else {
+                script = ecs_script_parse(ctx->world, "Unity command", code, nullptr, &result);
+                ++ctx->script_parses;
+                if (script) {
+                    if (ctx->parsed.size() >= 64) ctx->clear_parsed();
+                    ctx->parsed.emplace(std::move(key), script);
+                }
             }
         }
         if (script) rc = ecs_script_eval(script, nullptr, &result);
     }
     std::snprintf(ctx->error, sizeof(ctx->error), "%s", result.error ? result.error : (rc ? "Script failed" : ""));
     if (result.error) ecs_os_free(result.error);
-    return rc;
+    return fu_layout_fault(ctx, faults, rc);
 }
 
 int32_t fu_set_managed_script(fu_context* ctx, const char* path, const char* code) {
     if (!ctx || !path || !code) return -1;
+    // A reload deletes the types this script itself declared before evaluating; any other type in use must keep its layout.
+    const ecs_entity_t existing = ecs_lookup(ctx->world, path);
+    const ecs_entity_t owner = existing && ecs_has(ctx->world, existing, EcsScript) ? existing : 0;
+    if (!fu_types_allowed(ctx, code, owner)) return -1;
+    const uint64_t faults = layout_faults();
     ecs_entity_desc_t entity_desc{};
     entity_desc.name = path;
     entity_desc.sep = ".";
@@ -285,7 +319,7 @@ int32_t fu_set_managed_script(fu_context* ctx, const char* path, const char* cod
         return -1;
     }
     ctx->error[0] = 0;
-    return 0;
+    return fu_layout_fault(ctx, faults, 0);
 }
 
 char* fu_managed_script_source(fu_context* ctx, const char* path) {
@@ -670,11 +704,12 @@ char* fu_bridge_diagnostics(fu_context* ctx) {
     char result[512];
     std::snprintf(result, sizeof(result),
         "{\"queryBuilds\":%llu,\"queryHits\":%llu,\"queryRebuilds\":%llu,\"cachedQueries\":%zu,\"binaryReads\":%llu,"
-        "\"binaryWrites\":%llu,\"scriptParses\":%llu,\"scriptReuses\":%llu,\"rest\":%d}",
+        "\"binaryWrites\":%llu,\"scriptParses\":%llu,\"scriptReuses\":%llu,\"layoutFaults\":%llu,\"rest\":%d}",
         static_cast<unsigned long long>(ctx->query_builds), static_cast<unsigned long long>(ctx->query_hits),
         static_cast<unsigned long long>(ctx->query_rebuilds), live,
         static_cast<unsigned long long>(ctx->binary_reads), static_cast<unsigned long long>(ctx->binary_writes),
         static_cast<unsigned long long>(ctx->script_parses), static_cast<unsigned long long>(ctx->script_reuses),
+        static_cast<unsigned long long>(layout_faults()),
         static_cast<int>(ctx->rest_status));
     return ecs_os_strdup(result);
 }
