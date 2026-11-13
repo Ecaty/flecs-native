@@ -109,15 +109,32 @@ static void footprints(Trees& state,ecs_world_t* w){
     }
     for(auto i=state.geometry.begin();i!=state.geometry.end();)if(!ecs_is_alive(w,i->first))i=state.geometry.erase(i);else ++i;
 }
+static void caps_tick(fu_context* ctx,double dt);
+// Capability coordination runs in the pipeline (visible in Explorer pipeline stats), after OnStore
+// like the former post-progress call. Immediate: it adds CapDirty, sets results and ticks behavior
+// trees whose FlecsSet nodes must take effect at once. Its queries stay uncached on purpose: Cap*
+// components are Script-defined and may be redefined, which would orphan a cached query.
+struct CapabilitiesModule {
+    explicit CapabilitiesModule(flecs::world& world){
+        world.module<CapabilitiesModule>("engine::capabilities");
+        auto phase=world.entity("CapabilityPhase").add(flecs::Phase).depends_on(flecs::OnStore);
+        auto* ctx=static_cast<fu_context*>(world.get_ctx());
+        world.system("CapabilityCoordinationSystem").kind(phase).immediate()
+            .run([ctx](flecs::iter& it){ while(it.next()){} caps_tick(ctx,it.delta_time()); });
+    }
+};
 FU_API void fu_caps_init(fu_context* ctx){
     auto* w=static_cast<ecs_world_t*>(fu_world(ctx)); flecs::world view(w);
     view.component<NativeFootprint>("NativeFootprint").member(flecs::String,"json");
     view.component<NativeTree>("NativeTree").member(flecs::String,"xml").member(&NativeTree::revision,"revision").member(&NativeTree::enabled,"enabled").member(&NativeTree::loop,"loop");
     view.component<NativeTreeResult>("NativeTreeResult").member(flecs::String,"error").member(&NativeTreeResult::status,"status").member(&NativeTreeResult::revision,"revision").member(&NativeTreeResult::ticks,"ticks");
     worlds[ctx]=std::make_unique<Trees>(ctx);
+    void* previous=view.get_ctx(); view.set_ctx(ctx); view.import<CapabilitiesModule>(); view.set_ctx(previous);
 }
 FU_API void fu_caps_destroy(fu_context* ctx){ worlds.erase(ctx); }
-FU_API void fu_caps_tick(fu_context* ctx,double dt){
+// Normally ticked by CapabilityCoordinationSystem inside fu_tick; an explicit call ticks once more.
+FU_API void fu_caps_tick(fu_context* ctx,double dt){ caps_tick(ctx,dt); }
+static void caps_tick(fu_context* ctx,double dt){
     auto wi=worlds.find(ctx); if(wi==worlds.end()) return; auto& state=*wi->second; state.now+=dt;
     auto* w=static_cast<ecs_world_t*>(fu_world(ctx)); coordinate(state,w); footprints(state,w); flecs::world view(w); std::vector<ecs_entity_t> ids;
     view.each<NativeTree>([&](flecs::entity e,NativeTree&){ids.push_back(e.id());});

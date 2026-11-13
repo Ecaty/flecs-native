@@ -90,6 +90,9 @@ FU_API int32_t fu_query_read_data(fu_context*, int32_t handle, const char* varia
 FU_API int32_t fu_component_json_into(fu_context*, uint64_t entity, uint64_t type, char* out, int32_t capacity);
 FU_API int32_t fu_label_into(fu_context*, uint64_t entity, char* out, int32_t capacity);
 FU_API int32_t fu_name_into(fu_context*, uint64_t entity, char* out, int32_t capacity);
+/* Additive: reflected struct layout as JSON {"size","members":[{"name","offset","size","count","type","unit"?,"range"?}]},
+   copied like fu_label_into. -1 when the type is not a reflected struct component. */
+FU_API int32_t fu_type_layout(fu_context*, uint64_t type, char* out, int32_t capacity);
 #ifdef __cplusplus
 }
 #endif

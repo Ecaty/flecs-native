@@ -34,6 +34,16 @@ struct Label {
     ~Label() { ecs_os_free(text); }
 };
 
+// Native systems, observers and phases live in Flecs modules under `engine` (engine.gallery,
+// engine.capabilities, ...): import order is system order within a phase, and the Explorer and
+// pipeline stats group them by feature. Components stay at the root, registered before the
+// module import, because Script, C# lookups and JSON keys use their bare names.
+//
+// Phase map: PreUpdate = intents -> state (gallery motion); OnUpdate = simulation (Spin);
+// engine.capabilities.CapabilityPhase (after OnStore) = capability coordination, footprints and
+// behavior trees, as an immediate system so it may make structural edits like the former
+// post-progress tick.
+
 // Engine-independent components, reflection and behavior. No Unity dependencies.
 void register_core(flecs::world& world);
 

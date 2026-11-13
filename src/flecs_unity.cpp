@@ -221,9 +221,8 @@ int32_t fu_tick(fu_context* ctx, float dt) {
     clock.delta = dt;
     ++clock.frame;
     ctx->world.set<Clock>(clock);
-    bool running = ctx->world.progress(dt);
-    fu_caps_tick(ctx, dt);
-    return running ? 0 : -1;
+    // Capability coordination runs inside progress (engine.capabilities.CapabilityPhase, after OnStore).
+    return ctx->world.progress(dt) ? 0 : -1;
 }
 
 // Repeated commands reuse their parsed script. The cache is dropped whenever managed sources change,
@@ -587,6 +586,38 @@ int32_t fu_component_size(fu_context* ctx, uint64_t type) {
     const int32_t size = c ? c->size : -1;
     ctx->type_sizes.emplace(type, size);
     return size;
+}
+// Reflected layout of a struct component, so managed mirrors can be checked instead of drifting silently and
+// tools can describe fields: {"size":N,"members":[{"name","offset","size","count","type","unit"?,"range"?}]}.
+static void fu_json_string(std::string& out, const char* text) {
+    out += '"';
+    for (const char* c = text ? text : ""; *c; ++c) {
+        if (*c == '"' || *c == '\\') out += '\\';
+        if (static_cast<unsigned char>(*c) >= 0x20) out += *c;
+    }
+    out += '"';
+}
+int32_t fu_type_layout(fu_context* ctx, uint64_t type, char* out, int32_t capacity) {
+    if (!ctx || !type || !ecs_is_alive(ctx->world, type)) return -1;
+    const auto* component = ecs_get(ctx->world, type, EcsComponent);
+    const auto* st = ecs_get(ctx->world, type, EcsStruct);
+    if (!component || !st) return -1;
+    std::string json = "{\"size\":" + std::to_string(component->size) + ",\"members\":[";
+    const auto* members = static_cast<const ecs_member_t*>(ecs_vec_first(&st->members));
+    for (int i = 0; i < ecs_vec_count(&st->members); ++i) {
+        const auto& m = members[i];
+        if (i) json += ',';
+        json += "{\"name\":"; fu_json_string(json, m.name);
+        json += ",\"offset\":" + std::to_string(m.offset) + ",\"size\":" + std::to_string(m.size)
+            + ",\"count\":" + std::to_string(m.count) + ",\"type\":";
+        char* path = ecs_get_path(ctx->world, m.type); fu_json_string(json, path); ecs_os_free(path);
+        if (m.unit) { json += ",\"unit\":"; char* unit = ecs_get_path(ctx->world, m.unit); fu_json_string(json, unit); ecs_os_free(unit); }
+        if (m.range.min != m.range.max)
+            json += ",\"range\":[" + std::to_string(m.range.min) + "," + std::to_string(m.range.max) + "]";
+        json += '}';
+    }
+    json += "]}";
+    return fu_copy(json.c_str(), out, capacity);
 }
 int32_t fu_read_component(fu_context* ctx, uint64_t entity, uint64_t type, void* out, int32_t size) {
     if (!ctx || !out || size <= 0 || size != fu_component_size(ctx, type) || !ecs_is_alive(ctx->world, entity)) return -1;
