@@ -139,6 +139,14 @@ void ownership_is_exclusive_and_ends_with_the_owner() {
     expect(ecs_get_target(world, view, relation, 0) == 0, "deleting the owner ends the ownership");
     expect(fu_claim(ctx, view, relation, b) == -1, "a dead owner is a bad argument");
     expect(fu_claim(ctx, 0, relation, a) == -1 && fu_release(ctx, view, relation, 0) == -1, "zero ids are bad arguments");
+    // An owner may be a component (the application module is one, with no default constructor): the pair must
+    // stay a tag, or Flecs would construct that component's data on the view.
+    uint64_t component = fu_lookup(ctx, "Position");
+    expect(component != 0, "setup: a component entity");
+    expect(ecs_get_typeid(world, ecs_pair(relation, component)) == 0, "an ownership pair carries no data");
+    expect(fu_claim(ctx, view, relation, component) == 1, "a component entity can own");
+    expect(ecs_get_target(world, view, relation, 0) == component, "the component is the owner");
+    expect(fu_release(ctx, view, relation, component) == 1, "and releases");
     fu_destroy(ctx);
 }
 

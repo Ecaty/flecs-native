@@ -84,9 +84,11 @@ ViewModule* module_of(fu_context* ctx) {
 ViewModule::ViewModule(flecs::world& world) {
     // Public relationships: one owner per entity. Deleting the owner removes the pair (the Flecs default), which
     // moves the view to another table, so it is reported as changed and Unity takes the pose back.
+    // PairIsTag: without it a pair whose owner is a component (a module entity, for one) would carry that
+    // component's data, and Flecs would construct it.
     const ecs_entity_t scope = ecs_set_scope(world, 0);
-    transform_owner = world.entity("TransformOwner").add(flecs::Exclusive);
-    appearance_owner = world.entity("AppearanceOwner").add(flecs::Exclusive);
+    transform_owner = world.entity("TransformOwner").add(flecs::Exclusive).add(flecs::PairIsTag);
+    appearance_owner = world.entity("AppearanceOwner").add(flecs::Exclusive).add(flecs::PairIsTag);
     ecs_set_scope(world, scope);
     world.module<ViewModule>("::core::view");
     all = view_query(world, "All", false);
