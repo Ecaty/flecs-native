@@ -119,6 +119,29 @@ void events_reach_observers_as_parameters() {
     fu_destroy(ctx);
 }
 
+void ownership_is_exclusive_and_ends_with_the_owner() {
+    fu_context* ctx = fu_create(0);
+    expect(ctx != nullptr, "setup: a context");
+    if (!ctx)
+        return;
+    ecs_world_t* world = world_of(ctx);
+    ecs_entity_t view = ecs_new(world), a = ecs_new(world), b = ecs_new(world);
+    uint64_t relation = fu_lookup(ctx, "TransformOwner");
+    expect(relation != 0, "TransformOwner is defined");
+    expect(fu_claim(ctx, view, relation, a) == 1, "a free relation is claimed");
+    expect(fu_claim(ctx, view, relation, a) == 1, "the owner claims again");
+    expect(fu_claim(ctx, view, relation, b) == 0, "a second owner is refused");
+    expect(fu_release(ctx, view, relation, b) == 0, "a non-owner does not release");
+    expect(fu_release(ctx, view, relation, a) == 1, "the owner releases");
+    expect(fu_release(ctx, view, relation, a) == 0, "nothing is left to release");
+    expect(fu_claim(ctx, view, relation, b) == 1, "setup: B claims");
+    ecs_delete(world, b);
+    expect(ecs_get_target(world, view, relation, 0) == 0, "deleting the owner ends the ownership");
+    expect(fu_claim(ctx, view, relation, b) == -1, "a dead owner is a bad argument");
+    expect(fu_claim(ctx, 0, relation, a) == -1 && fu_release(ctx, view, relation, 0) == -1, "zero ids are bad arguments");
+    fu_destroy(ctx);
+}
+
 } // namespace
 
 int main() {
@@ -127,6 +150,7 @@ int main() {
     worlds_keep_separate_module_state();
     json_writes_report_unknown_names();
     events_reach_observers_as_parameters();
+    ownership_is_exclusive_and_ends_with_the_owner();
     std::printf("%s (%d failed)\n", failures ? "FAILED" : "PASSED", failures);
     return failures;
 }

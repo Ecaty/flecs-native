@@ -24,6 +24,8 @@ typedef struct fu_view {
     uint32_t flags;       /* FU_VIEW_* */
 } fu_view;
 #define FU_VIEW_ORIENTED 1u /* the entity has an Orientation: qx..qw are its rotation */
+#define FU_VIEW_POSE_OWNED 2u /* (TransformOwner, owner): the owner moves the view; do not write its pose */
+#define FU_VIEW_APPEARANCE_OWNED 4u /* (AppearanceOwner, owner): the owner draws the view; do not write its colour */
 /* A fact Unity reports to the world, delivered as a Flecs event on `entity` (observers read it as their parameter). */
 typedef struct fu_event {
     uint64_t event;  /* the event entity, for example one found with fu_lookup */
@@ -108,6 +110,12 @@ FU_API const fu_view* fu_view_changes(fu_context*, int32_t* count, const uint64_
 FU_API int32_t fu_type_layout_into(fu_context*, uint64_t type, char* out, int32_t capacity);
 /* Delivers each fact as a Flecs event. Returns how many were delivered (dead entities are skipped), or -1. */
 FU_API int32_t fu_emit_events(fu_context*, const fu_event* events, int32_t count);
+/* Ownership as an exclusive relationship in the world, for example (TransformOwner, binding) on a view: one owner
+   per entity and relation, visible to queries. fu_claim returns 1 when `owner` holds the relation afterwards (it was
+   free or already theirs), 0 when another owner holds it, -1 for bad arguments. fu_release removes it only when
+   `owner` holds it and returns 1 if it did. */
+FU_API int32_t fu_claim(fu_context*, uint64_t entity, uint64_t relation, uint64_t owner);
+FU_API int32_t fu_release(fu_context*, uint64_t entity, uint64_t relation, uint64_t owner);
 /* One-off query for tools: no cache, no query slot. limit > 0 returns at most that many rows. Owned JSON, or NULL
    when the expression is invalid (fu_last_error has details). */
 FU_API char* fu_query_once_json(fu_context*, const char* expression, int32_t limit);

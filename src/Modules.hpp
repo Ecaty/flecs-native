@@ -86,6 +86,7 @@ struct GeometryModule {
 // Presentation snapshots for Unity: every view, or only what changed since the previous call.
 struct ViewModule {
     explicit ViewModule(flecs::world& world);
+    flecs::entity_t transform_owner = 0, appearance_owner = 0; // exclusive relationships, public at the root
     ecs_query_t* all = nullptr;     // both queries live on module entities, so Flecs frees them with the world
     ecs_query_t* changes = nullptr; // cached, with change detection
     std::vector<fu_view> changed;   // returned by fu_view_changes; valid until the next call

@@ -27,7 +27,11 @@ ecs_query_t* view_query(flecs::world& world, const char* name, bool detect_chang
 // Calls sink(view) for every entity of the iterator's current table. Fields are read once per table; an inherited
 // (shared) field holds one value for the whole table.
 template <typename Sink>
-void read_rows(ecs_world_t* world, ecs_iter_t& it, Sink&& sink) {
+void read_rows(ecs_world_t* world, const ViewModule& views, ecs_iter_t& it, Sink&& sink) {
+    // Ownership pairs are part of the table's type, so they are looked up once per table.
+    uint32_t owned = 0;
+    if (ecs_table_has_id(world, it.table, ecs_pair(views.transform_owner, EcsWildcard))) owned |= FU_VIEW_POSE_OWNED;
+    if (ecs_table_has_id(world, it.table, ecs_pair(views.appearance_owner, EcsWildcard))) owned |= FU_VIEW_APPEARANCE_OWNED;
     auto column = [&](int field, std::size_t size) -> const void* {
         return ecs_field_is_set(&it, static_cast<int8_t>(field)) ? ecs_field_w_size(&it, size, static_cast<int8_t>(field)) : nullptr;
     };
@@ -41,6 +45,7 @@ void read_rows(ecs_world_t* world, ecs_iter_t& it, Sink&& sink) {
     const bool labeled = ecs_field_is_set(&it, LabelField);
     for (int i = 0; i < it.count; ++i) {
         fu_view view{};
+        view.flags = owned;
         view.entity = it.entities[i];
         view.parent = ecs_get_parent(world, view.entity);
         const Position& p = position[row(PositionField, i)];
@@ -77,6 +82,12 @@ ViewModule* module_of(fu_context* ctx) {
 } // namespace
 
 ViewModule::ViewModule(flecs::world& world) {
+    // Public relationships: one owner per entity. Deleting the owner removes the pair (the Flecs default), which
+    // moves the view to another table, so it is reported as changed and Unity takes the pose back.
+    const ecs_entity_t scope = ecs_set_scope(world, 0);
+    transform_owner = world.entity("TransformOwner").add(flecs::Exclusive);
+    appearance_owner = world.entity("AppearanceOwner").add(flecs::Exclusive);
+    ecs_set_scope(world, scope);
     world.module<ViewModule>("::core::view");
     all = view_query(world, "All", false);
     changes = view_query(world, "Changes", true);
@@ -102,7 +113,7 @@ int32_t fu_read_views(fu_context* ctx, fu_view* out, int32_t capacity) {
     int32_t total = 0;
     ecs_iter_t it = ecs_query_iter(world, views->all);
     while (ecs_query_next(&it))
-        read_rows(world, it, [&](const fu_view& view) {
+        read_rows(world, *views, it, [&](const fu_view& view) {
             const int32_t index = total++;
             if (out && index < capacity) out[index] = view;
         });
@@ -117,7 +128,7 @@ const fu_view* fu_view_changes(fu_context* ctx, int32_t* count, const uint64_t**
     ecs_iter_t it = ecs_query_iter(world, views->changes);
     while (ecs_query_next(&it)) {
         if (!ecs_iter_changed(&it)) continue;
-        read_rows(world, it, [&](const fu_view& view) { views->changed.push_back(view); });
+        read_rows(world, *views, it, [&](const fu_view& view) { views->changed.push_back(view); });
     }
     views->removed_out.clear();
     views->removed_out.swap(views->removed);
@@ -127,6 +138,25 @@ const fu_view* fu_view_changes(fu_context* ctx, int32_t* count, const uint64_t**
     // Never NULL on success, also when nothing changed: NULL means the call failed.
     static const fu_view none{};
     return views->changed.empty() ? &none : views->changed.data();
+}
+
+int32_t fu_claim(fu_context* ctx, uint64_t entity, uint64_t relation, uint64_t owner) {
+    auto* world = static_cast<ecs_world_t*>(fu_world(ctx));
+    if (!world || !entity || !relation || !owner || !ecs_is_alive(world, entity) || !ecs_is_alive(world, relation) ||
+        !ecs_is_alive(world, owner))
+        return -1;
+    const ecs_entity_t current = ecs_get_target(world, entity, relation, 0);
+    if (current && current != owner) return 0;
+    if (!current) ecs_add_pair(world, entity, relation, owner);
+    return 1;
+}
+
+int32_t fu_release(fu_context* ctx, uint64_t entity, uint64_t relation, uint64_t owner) {
+    auto* world = static_cast<ecs_world_t*>(fu_world(ctx));
+    if (!world || !entity || !relation || !owner || !ecs_is_alive(world, entity) || !ecs_is_alive(world, relation)) return -1;
+    if (ecs_get_target(world, entity, relation, 0) != owner) return 0;
+    ecs_remove_pair(world, entity, relation, owner);
+    return 1;
 }
 
 }
