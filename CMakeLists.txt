@@ -24,7 +24,7 @@ else()
 endif()
 message(STATUS "Flecs submodule revision: ${FLECS_UPSTREAM_SHORT}")
 # Our own sources (vendor code is compiled as it ships).
-set(FU_CORE_SOURCES src/flecs_unity.cpp src/Components.cpp src/TypeGuard.cpp
+set(FU_CORE_SOURCES src/flecs_unity.cpp src/Components.cpp src/TypeGuard.cpp src/Views.cpp
   src/Capabilities.cpp src/Geometry.cpp src/BehaviorTrees.cpp src/Audio.cpp)
 add_library(flecs_unity_core OBJECT src/flecs_unity.cpp src/Components.cpp src/TypeGuard.cpp "${FLECS_DIR}/distr/flecs.c")
 # -DFU_WARNINGS=ON compiles our sources with warnings. Warnings that vendor headers raise inside these files are
@@ -70,7 +70,7 @@ set(CLIPPER2_TESTS OFF CACHE BOOL "" FORCE)
 set(CLIPPER2_USINGZ OFF CACHE STRING "" FORCE)
 add_subdirectory(vendor/behaviortree EXCLUDE_FROM_ALL)
 add_subdirectory(vendor/clipper2/CPP EXCLUDE_FROM_ALL)
-target_sources(flecs_unity_core PRIVATE src/Capabilities.cpp src/Geometry.cpp src/BehaviorTrees.cpp src/Audio.cpp)
+target_sources(flecs_unity_core PRIVATE src/Views.cpp src/Capabilities.cpp src/Geometry.cpp src/BehaviorTrees.cpp src/Audio.cpp)
 target_include_directories(flecs_unity_core PRIVATE vendor/tinysoundfont)
 target_link_libraries(flecs_unity_core PUBLIC behaviortree_cpp Clipper2)
 

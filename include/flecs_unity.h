@@ -20,7 +20,18 @@ typedef struct fu_view {
     float r, g, b, a;
     int32_t primitive; /* -1 = empty transform; 0..5 = cube/sphere/capsule/cylinder/plane/quad */
     int32_t has_label;
+    float qx, qy, qz, qw; /* Orientation quaternion; use it instead of the Euler rotation when FU_VIEW_ORIENTED is set */
+    uint32_t flags;       /* FU_VIEW_* */
 } fu_view;
+#define FU_VIEW_ORIENTED 1u /* the entity has an Orientation: qx..qw are its rotation */
+/* A fact Unity reports to the world, delivered as a Flecs event on `entity` (observers read it as their parameter). */
+typedef struct fu_event {
+    uint64_t event;  /* the event entity, for example one found with fu_lookup */
+    uint64_t entity; /* the entity the fact is about */
+    uint64_t other;  /* a second entity (what was touched, where it arrived), or 0 */
+    float x, y, z;   /* a point or direction, when the fact has one */
+    float value;
+} fu_event;
 /* Runtime capability extension; world calls stay on the simulation thread. */
 FU_API int fu_cap_has(fu_context*,uint64_t entity,const char* type);
 FU_API void fu_cap_ack(fu_context*,uint64_t entity);
@@ -87,6 +98,16 @@ FU_API int32_t fu_query_read_data(fu_context*, int32_t handle, const char* varia
 FU_API int32_t fu_component_json_into(fu_context*, uint64_t entity, uint64_t type, char* out, int32_t capacity);
 FU_API int32_t fu_label_into(fu_context*, uint64_t entity, char* out, int32_t capacity);
 FU_API int32_t fu_name_into(fu_context*, uint64_t entity, char* out, int32_t capacity);
+/* ABI 4. fu_view carries an orientation quaternion and flags (96 bytes). */
+/* Views that changed since the previous call (a whole table is returned when any of its data changed), and the
+   entities that stopped being views. The returned arrays belong to the library and stay valid until the next call
+   for this context. Returns NULL only on error; the first call returns every view. */
+FU_API const fu_view* fu_view_changes(fu_context*, int32_t* count, const uint64_t** removed, int32_t* removed_count);
+/* Layout of a reflected type as JSON: {"size","alignment","fields":[{"name","offset","size","kind"}]} with nested
+   structs and arrays flattened to their leaves. Copies UTF-8 into the caller buffer like fu_name_into. */
+FU_API int32_t fu_type_layout_into(fu_context*, uint64_t type, char* out, int32_t capacity);
+/* Delivers each fact as a Flecs event. Returns how many were delivered (dead entities are skipped), or -1. */
+FU_API int32_t fu_emit_events(fu_context*, const fu_event* events, int32_t count);
 /* One-off query for tools: no cache, no query slot. limit > 0 returns at most that many rows. Owned JSON, or NULL
    when the expression is invalid (fu_last_error has details). */
 FU_API char* fu_query_once_json(fu_context*, const char* expression, int32_t limit);

@@ -210,6 +210,7 @@ TreeModule::TreeModule(TreeModule&&) noexcept = default;
 TreeModule& TreeModule::operator=(TreeModule&&) noexcept = default;
 
 void import_modules(flecs::world& world) {
+    world.import<ViewModule>();
     world.import<CapabilityModule>();
     world.import<GeometryModule>();
     world.import<TreeModule>();

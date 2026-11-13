@@ -1,5 +1,6 @@
 #pragma once
 #include "flecs.h"
+#include "flecs_unity.h"
 #include "FlecsComponents.hpp"
 #include <cstdint>
 #include <memory>
@@ -10,7 +11,8 @@
 // Native modules of the shared core.
 //
 // Names: public components keep their root-scope names (Script, JSON and saves refer to them by that name). Systems,
-// observers and module state live inside the module, so the Explorer groups them (core.cap, core.tree, core.geometry).
+// observers and module state live inside the module, so the Explorer groups them (core.cap, core.tree, core.geometry,
+// core.view).
 //
 // Phase map, used by every native module (docs/ENGINE-PLAN.md section 3.2):
 //   OnLoad      facts from Unity: input, contacts, arrivals
@@ -79,6 +81,15 @@ struct GeometryModule {
     flecs::entity_t spline = 0, observer = 0;
     std::unordered_map<flecs::entity_t, std::string> inputs; // last input per entity; unchanged input is not recomputed
     std::vector<flecs::entity_t> changed;                     // splines set since the last frame
+};
+
+// Presentation snapshots for Unity: every view, or only what changed since the previous call.
+struct ViewModule {
+    explicit ViewModule(flecs::world& world);
+    ecs_query_t* all = nullptr;     // both queries live on module entities, so Flecs frees them with the world
+    ecs_query_t* changes = nullptr; // cached, with change detection
+    std::vector<fu_view> changed;   // returned by fu_view_changes; valid until the next call
+    std::vector<std::uint64_t> removed, removed_out; // noted by the observer; handed out by fu_view_changes
 };
 
 // Behaviour trees (BehaviorTree.CPP) defined as component data.

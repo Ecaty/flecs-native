@@ -9,6 +9,8 @@ struct Clock { double time = 0, delta = 0; std::int64_t frame = 0; };
 
 struct Position { float x, y, z; };
 struct Rotation { float x, y, z; };
+// Rotation as a quaternion. When an entity has it, presentation uses it instead of the Euler Rotation.
+struct Orientation { float x = 0, y = 0, z = 0, w = 1; };
 struct Scale { float x, y, z; };
 struct Color { float r, g, b, a; };
 struct Presented {

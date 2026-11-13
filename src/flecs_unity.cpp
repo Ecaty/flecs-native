@@ -26,9 +26,7 @@
 using namespace flecs_unity;
 
 struct fu_context {
-    // Members are destroyed in reverse order: query before world.
     flecs::world world;
-    flecs::query<const Position> views;
     ecs_http_server_t* rest_server = nullptr;
     int32_t rest_status = 0; // 1 running, 0 off, -1 could not start (port in use)
     char error[4096]{};
@@ -80,15 +78,15 @@ struct fu_context {
         for (auto& slot : slots) release_query(slot);
         slots.clear();
         if (rest_server) ecs_rest_server_fini(rest_server);
-        if (views) views.destruct(); // Named query; explicitly clear its handle.
     }
 };
 
 // All exported calls belong to the Unity main thread. C# never sees C++ objects.
 static char create_error[4096]{};
-static_assert(sizeof(fu_view) == 80, "Unity snapshot ABI changed");
+static_assert(sizeof(fu_view) == 96, "Unity snapshot ABI changed");
+static_assert(sizeof(fu_event) == 40, "Unity event ABI changed");
 
-int32_t fu_abi_version(void) { return 3; }
+int32_t fu_abi_version(void) { return 4; }
 int32_t fu_view_size(void) { return static_cast<int32_t>(sizeof(fu_view)); }
 const char* fu_version(void) { return FLECS_VERSION "+" FU_FLECS_REVISION; }
 const char* fu_last_error(fu_context* ctx) { return ctx ? ctx->error : create_error; }
@@ -162,16 +160,6 @@ fu_context* fu_create_ex(uint16_t port, uint32_t flags) {
         register_core(ctx->world);
         register_application(ctx->world);
         import_modules(ctx->world);
-        // Presentation snapshot: one cached query reads every field per table instead of per-entity lookups.
-        ctx->views = ctx->world.query_builder<const Position>("UnityViews")
-            .with<Rotation>().optional().in()
-            .with<Scale>().optional().in()
-            .with<Color>().optional().in()
-            .with<Primitive>().optional().in()
-            .with<Label>().optional().in()
-            .cache_kind(flecs::QueryCacheAuto).build();
-        if (!ctx->views) throw std::runtime_error("Could not create UnityViews query");
-
         if (port) {
             // REST structural edits run outside progress, not in a system callback.
             ecs_http_server_desc_t desc{};
@@ -326,44 +314,6 @@ char* fu_managed_script_source(fu_context* ctx, const char* path) {
     const auto entity = ecs_lookup(ctx->world, path);
     const auto* script = entity ? ecs_get(ctx->world, entity, EcsScript) : nullptr;
     return script && script->code ? ecs_os_strdup(script->code) : nullptr;
-}
-
-int32_t fu_read_views(fu_context* ctx, fu_view* out, int32_t capacity) {
-    if (!ctx || capacity < 0) return -1;
-    ecs_world_t* w = ctx->world.c_ptr();
-    int32_t total = 0;
-    ecs_iter_t it = ecs_query_iter(w, ctx->views.c_ptr());
-    while (ecs_query_next(&it)) {
-        const auto* position = static_cast<const Position*>(ecs_field_w_size(&it, sizeof(Position), 0));
-        const auto* rotation = ecs_field_is_set(&it, 1) ? static_cast<const Rotation*>(ecs_field_w_size(&it, sizeof(Rotation), 1)) : nullptr;
-        const auto* scale = ecs_field_is_set(&it, 2) ? static_cast<const Scale*>(ecs_field_w_size(&it, sizeof(Scale), 2)) : nullptr;
-        const auto* color = ecs_field_is_set(&it, 3) ? static_cast<const Color*>(ecs_field_w_size(&it, sizeof(Color), 3)) : nullptr;
-        const auto* shape = ecs_field_is_set(&it, 4) ? static_cast<const Primitive*>(ecs_field_w_size(&it, sizeof(Primitive), 4)) : nullptr;
-        const bool labeled = ecs_field_is_set(&it, 5);
-        // Inherited (shared) fields hold one value for the whole table.
-        const bool ps = ecs_field_is_self(&it, 0);
-        const bool rs = rotation && ecs_field_is_self(&it, 1), ss = scale && ecs_field_is_self(&it, 2);
-        const bool cs = color && ecs_field_is_self(&it, 3), ks = shape && ecs_field_is_self(&it, 4);
-        for (int32_t i = 0; i < it.count; ++i) {
-            const auto index = total++;
-            if (!out || index >= capacity) continue;
-            const auto entity = it.entities[i];
-            const auto& p = position[ps ? i : 0];
-            fu_view view{};
-            view.entity = entity;
-            view.parent = ecs_get_parent(w, entity);
-            view.px = p.x; view.py = p.y; view.pz = p.z;
-            if (rotation) { const auto& r = rotation[rs ? i : 0]; view.rx = r.x; view.ry = r.y; view.rz = r.z; }
-            if (scale) { const auto& c = scale[ss ? i : 0]; view.sx = c.x; view.sy = c.y; view.sz = c.z; }
-            else { view.sx = view.sy = view.sz = 1; }
-            if (color) { const auto& c = color[cs ? i : 0]; view.r = c.r; view.g = c.g; view.b = c.b; view.a = c.a; }
-            else { view.r = view.g = view.b = view.a = 1; }
-            view.primitive = shape ? shape[ks ? i : 0].kind : -1;
-            view.has_label = labeled ? 1 : 0;
-            out[index] = view;
-        }
-    }
-    return total; // May exceed capacity: caller grows the buffer and reads again.
 }
 
 int32_t fu_write_presented(fu_context* ctx, const fu_view* views, int32_t count, int32_t frame) {
@@ -665,6 +615,97 @@ int32_t fu_component_size(fu_context* ctx, uint64_t type) {
     ctx->type_sizes.emplace(type, size);
     return size;
 }
+// Type layout for mirror checks: every leaf value with its byte offset, so a managed struct can be compared field by
+// field instead of by total size only.
+static const char* fu_primitive_kind(ecs_primitive_kind_t kind) {
+    switch (kind) {
+    case EcsBool: return "bool";
+    case EcsChar: return "char";
+    case EcsByte: return "byte";
+    case EcsU8: return "u8";
+    case EcsU16: return "u16";
+    case EcsU32: return "u32";
+    case EcsU64: return "u64";
+    case EcsI8: return "i8";
+    case EcsI16: return "i16";
+    case EcsI32: return "i32";
+    case EcsI64: return "i64";
+    case EcsF32: return "f32";
+    case EcsF64: return "f64";
+    case EcsUPtr: return "uptr";
+    case EcsIPtr: return "iptr";
+    case EcsString: return "string";
+    case EcsEntity: return "entity";
+    case EcsId: return "id";
+    default: return "primitive";
+    }
+}
+static void fu_layout_fields(ecs_world_t* w, ecs_entity_t type, const std::string& name, int32_t offset, std::string& out, int depth) {
+    const auto* component = ecs_get(w, type, EcsComponent);
+    const int32_t size = component ? component->size : 0;
+    auto leaf = [&](const char* kind) {
+        if (out.back() != '[') out += ',';
+        out += "{\"name\":\"" + (name.empty() ? std::string("value") : name) + "\",\"offset\":" + std::to_string(offset) +
+            ",\"size\":" + std::to_string(size) + ",\"kind\":\"" + kind + "\"}";
+    };
+    if (depth > 8) { leaf("opaque"); return; }
+    if (const auto* primitive = ecs_get(w, type, EcsPrimitive)) { leaf(fu_primitive_kind(primitive->kind)); return; }
+    if (ecs_has(w, type, EcsEnum)) { leaf("enum"); return; }
+    if (ecs_has(w, type, EcsBitmask)) { leaf("bitmask"); return; }
+    if (const auto* array = ecs_get(w, type, EcsArray)) {
+        const auto* element = ecs_get(w, array->type, EcsComponent);
+        for (int32_t i = 0; element && i < array->count; ++i)
+            fu_layout_fields(w, array->type, name + "[" + std::to_string(i) + "]", offset + i * element->size, out, depth + 1);
+        return;
+    }
+    if (const auto* st = ecs_get(w, type, EcsStruct)) {
+        const auto* members = static_cast<const ecs_member_t*>(ecs_vec_first(&st->members));
+        for (int i = 0; i < ecs_vec_count(&st->members); ++i) {
+            const ecs_member_t& member = members[i];
+            const std::string path = name.empty() ? member.name : name + "." + member.name;
+            const auto* element = ecs_get(w, member.type, EcsComponent);
+            const int32_t count = member.count > 1 ? member.count : 1;
+            for (int32_t k = 0; element && k < count; ++k)
+                fu_layout_fields(w, member.type, count > 1 ? path + "[" + std::to_string(k) + "]" : path,
+                    offset + member.offset + k * element->size, out, depth + 1);
+        }
+        return;
+    }
+    leaf("opaque");
+}
+int32_t fu_type_layout_into(fu_context* ctx, uint64_t type, char* out, int32_t capacity) {
+    if (!ctx || !type || !ecs_is_alive(ctx->world, type)) return -1;
+    const auto* component = ecs_get(ctx->world, type, EcsComponent);
+    if (!component) return -1;
+    std::string json = "{\"size\":" + std::to_string(component->size) + ",\"alignment\":" + std::to_string(component->alignment) + ",\"fields\":[";
+    fu_layout_fields(ctx->world, type, "", 0, json, 0);
+    json += "]}";
+    return fu_copy(json.c_str(), out, capacity);
+}
+
+// Facts from Unity (a contact, a tap, an arrival) become Flecs events on the entity they are about. Observers
+// registered for the event on any component receive the fu_event as their parameter.
+int32_t fu_emit_events(fu_context* ctx, const fu_event* events, int32_t count) {
+    if (!ctx || count < 0 || (count && !events)) return -1;
+    ecs_id_t any = EcsAny;
+    ecs_type_t ids{};
+    ids.array = &any;
+    ids.count = 1;
+    int32_t delivered = 0;
+    for (int32_t i = 0; i < count; ++i) {
+        const fu_event& fact = events[i];
+        if (!fact.event || !fact.entity || !ecs_is_alive(ctx->world, fact.event) || !ecs_is_alive(ctx->world, fact.entity)) continue;
+        ecs_event_desc_t desc{};
+        desc.event = fact.event;
+        desc.ids = &ids;
+        desc.entity = fact.entity;
+        desc.const_param = &fact;
+        ecs_emit(ctx->world, &desc);
+        ++delivered;
+    }
+    return delivered;
+}
+
 int32_t fu_read_component(fu_context* ctx, uint64_t entity, uint64_t type, void* out, int32_t size) {
     if (!ctx || !out || size <= 0 || size != fu_component_size(ctx, type) || !ecs_is_alive(ctx->world, entity)) return -1;
     const void* value = ecs_get_id(ctx->world, entity, type);

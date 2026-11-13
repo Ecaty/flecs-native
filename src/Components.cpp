@@ -17,6 +17,11 @@ void register_core(flecs::world& world) {
         .member(&Rotation::x, "x")
         .member(&Rotation::y, "y")
         .member(&Rotation::z, "z");
+    world.component<Orientation>("Orientation")
+        .member(&Orientation::x, "x")
+        .member(&Orientation::y, "y")
+        .member(&Orientation::z, "z")
+        .member(&Orientation::w, "w");
     world.component<Scale>("Scale")
         .member(&Scale::x, "x")
         .member(&Scale::y, "y")
