@@ -25,9 +25,6 @@ typedef struct fu_view {
 FU_API int fu_cap_has(fu_context*,uint64_t entity,const char* type);
 FU_API void fu_cap_ack(fu_context*,uint64_t entity);
 FU_API int fu_cap_ready(fu_context*,uint64_t entity);
-FU_API void fu_caps_init(fu_context*);
-FU_API void fu_caps_destroy(fu_context*);
-FU_API void fu_caps_tick(fu_context*, double dt);
 FU_API void* fu_audio_create(const void* bank, int bytes, int sample_rate);
 FU_API void fu_audio_destroy(void* renderer);
 FU_API int fu_audio_note(void* renderer,int kind,int note,float velocity,int program,uint64_t sample);

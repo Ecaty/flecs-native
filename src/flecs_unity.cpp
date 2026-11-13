@@ -11,6 +11,7 @@
 #endif
 #include "flecs_unity.h"
 #include "FlecsComponents.hpp"
+#include "Modules.hpp"
 #include "TypeGuard.hpp"
 #include <cmath>
 #include <cstdio>
@@ -72,7 +73,6 @@ struct fu_context {
     }
 
     ~fu_context() {
-        fu_caps_destroy(this);
         for (auto& wait : waits) { ecs_script_future_cancel(wait.future); ecs_script_future_release(wait.future); }
         waits.clear();
         clear_parsed();
@@ -160,7 +160,7 @@ fu_context* fu_create_ex(uint16_t port, uint32_t flags) {
 
         register_core(ctx->world);
         register_application(ctx->world);
-        fu_caps_init(ctx.get());
+        import_modules(ctx->world);
         // Presentation snapshot: one cached query reads every field per table instead of per-entity lookups.
         ctx->views = ctx->world.query_builder<const Position>("UnityViews")
             .with<Rotation>().optional().in()
@@ -202,7 +202,7 @@ fu_context* fu_create_ex(uint16_t port, uint32_t flags) {
 fu_context* fu_create(uint16_t port) { return fu_create_ex(port, 0); }
 int32_t fu_rest_status(fu_context* ctx) { return ctx ? ctx->rest_status : 0; }
 
-void fu_destroy(fu_context* ctx) { fu_caps_destroy(ctx); delete ctx; }
+void fu_destroy(fu_context* ctx) { delete ctx; }
 
 int32_t fu_tick(fu_context* ctx, float dt) {
     if (!ctx || !std::isfinite(dt) || dt < 0 || dt > 10) return -1;
@@ -223,9 +223,7 @@ int32_t fu_tick(fu_context* ctx, float dt) {
     clock.delta = dt;
     ++clock.frame;
     ctx->world.set<Clock>(clock);
-    bool running = ctx->world.progress(dt);
-    fu_caps_tick(ctx, dt);
-    return running ? 0 : -1;
+    return ctx->world.progress(dt) ? 0 : -1;
 }
 
 // Refuses a script that would change the layout of a type entities already use (TypeGuard.hpp).
@@ -568,17 +566,22 @@ char* fu_query_changes(fu_context* ctx, const char* expression) {
     if (!existed) return fu_query_json_h(ctx, handle);
     return fu_query_changed(ctx, handle) == 0 ? nullptr : fu_query_json_h(ctx, handle);
 }
-int32_t fu_set_component_json(fu_context* ctx, const char* entity, const char* type, const char* json) {
-    auto e = fu_lookup(ctx, entity), t = fu_lookup(ctx, type);
-    if (!e || !t || !json) return -1;
-    const auto* info = ecs_get_type_info(ctx->world, t);
+int flecs_unity::set_component_json(ecs_world_t* world, const char* entity, const char* type, const char* json) {
+    if (!world || !entity || !type || !json) return -1;
+    const ecs_entity_t e = ecs_lookup(world, entity), t = ecs_lookup(world, type);
+    if (!e || !t) return -1;
+    const auto* info = ecs_get_type_info(world, t);
     if (!info || info->size <= 0) return -1;
-    ecs_value_t value = ecs_value_new(ctx->world, t);
+    ecs_value_t value = ecs_value_new(world, t);
     if (!value.ptr) return -1;
-    const char* end = ecs_ptr_from_json(ctx->world, t, value.ptr, json, nullptr);
-    if (!end) { ecs_value_fini(ctx->world, &value); return -1; }
-    ecs_set_id(ctx->world, e, t, ecs_get_type_info(ctx->world, t)->size, value.ptr);
-    ecs_value_fini(ctx->world, &value); return 0;
+    const char* end = ecs_ptr_from_json(world, t, value.ptr, json, nullptr);
+    if (!end) { ecs_value_fini(world, &value); return -1; }
+    ecs_set_id(world, e, t, info->size, value.ptr);
+    ecs_value_fini(world, &value);
+    return 0;
+}
+int32_t fu_set_component_json(fu_context* ctx, const char* entity, const char* type, const char* json) {
+    return ctx ? set_component_json(ctx->world, entity, type, json) : -1;
 }
 
 char* fu_entity_json(fu_context* ctx, const char* path) {
