@@ -1,0 +1,72 @@
+name: Upstream check
+
+# Weekly: compares each third-party submodule pin in vendor/ with its original repository
+# (default branch head and latest release). Opens or updates one issue per library in this repo.
+# It never syncs a fork or moves a pin; updating stays manual (docs/THIRD-PARTY.md).
+on:
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+          lfs: false
+      - name: Compare pins with upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # name | submodule path | original repository (where the pin comes from)
+          libraries='
+          Flecs|vendor/flecs|SanderMertens/flecs
+          BehaviorTree.CPP|vendor/behaviortree|BehaviorTree/BehaviorTree.CPP
+          Clipper2|vendor/clipper2|PolyClipping/Clipper2
+          TinySoundFont|vendor/tinysoundfont|schellingb/TinySoundFont
+          '
+          gh label create upstream --repo "$REPO" --color c5def5 --description 'Upstream dependency has changes' 2>/dev/null || true
+          echo "$libraries" | while IFS='|' read -r name path upstream; do
+            name=$(echo "$name" | xargs); [ -z "$name" ] && continue
+            pin=$(git ls-tree HEAD "$path" | awk '{print $3}')
+            [ -n "$pin" ] || { echo "::error::No submodule pin for $path"; exit 1; }
+            branch=$(gh api "repos/$upstream" --jq .default_branch)
+            head=$(gh api "repos/$upstream/commits/$branch" --jq .sha)
+            ahead=$(gh api "repos/$upstream/compare/$pin...$head" --jq .ahead_by)
+            # No release published -> 404 (gh prints the error body on stdout, so discard it).
+            release=$(gh api "repos/$upstream/releases/latest" --jq .tag_name 2>/dev/null) || release=''
+            release_new=0; release_line='none published'
+            if [ -n "$release" ]; then
+              release_ahead=$(gh api "repos/$upstream/compare/$pin...$release" --jq .ahead_by)
+              release_line="[$release](https://github.com/$upstream/releases/tag/$release)"
+              if [ "$release_ahead" -gt 0 ]; then release_new=1; release_line="$release_line (has $release_ahead commits not in our pin)"; else release_line="$release_line (included in our pin)"; fi
+            fi
+            echo "$name: pin ${pin:0:7}, $upstream $branch ${head:0:7}, ahead=$ahead, release=$release new=$release_new"
+            [ "$ahead" -gt 0 ] || [ "$release_new" -eq 1 ] || continue
+            title="Upstream update: $name"
+            body=$(printf '%s\n' \
+              "Original: https://github.com/$upstream" \
+              "Our pin: \`$pin\` (\`$path\`)" \
+              "" \
+              "- \`$branch\` is $ahead commits ahead: https://github.com/$upstream/compare/$pin...$head" \
+              "- Latest release: $release_line" \
+              "" \
+              "Nothing was changed automatically. To update, follow \"Upstream check and updates\" in docs/THIRD-PARTY.md." \
+              "" \
+              "_Checked $(date -u +%Y-%m-%d) by .github/workflows/upstream-check.yml._")
+            number=$(gh issue list --repo "$REPO" --state open --label upstream --search "\"$title\" in:title" --json number,title --jq ".[] | select(.title == \"$title\") | .number" | head -1)
+            if [ -n "$number" ]; then
+              gh issue edit "$number" --repo "$REPO" --body "$body"
+            else
+              gh issue create --repo "$REPO" --title "$title" --label upstream --body "$body"
+            fi
+          done
