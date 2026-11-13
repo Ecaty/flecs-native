@@ -20,4 +20,4 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-Flecs itself is distributed under its upstream license in Native/vendor/LICENSE.flecs.
+Flecs itself is distributed under its upstream license in vendor/flecs/LICENSE (submodule of the Ecaty/flecs fork).

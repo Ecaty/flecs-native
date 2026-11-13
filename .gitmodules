@@ -1,0 +1,22 @@
+# Third-party sources: unmodified submodules of Ecaty forks; the recorded commit is the pin.
+# Clipper2 tracks PolyClipping/Clipper2 through the fork's ecaty branch. Its CMake rewrites
+# CPP/Clipper2Lib/include/clipper2/clipper.version.h (same content, LF endings) on every configure,
+# which shows as dirty under core.autocrlf=true, hence ignore = dirty for that submodule.
+[submodule "vendor/flecs"]
+	path = vendor/flecs
+	url = https://github.com/Ecaty/flecs.git
+	shallow = true
+[submodule "vendor/behaviortree"]
+	path = vendor/behaviortree
+	url = https://github.com/Ecaty/BehaviorTree.CPP.git
+	shallow = true
+[submodule "vendor/tinysoundfont"]
+	path = vendor/tinysoundfont
+	url = https://github.com/Ecaty/TinySoundFont.git
+	shallow = true
+[submodule "vendor/clipper2"]
+	path = vendor/clipper2
+	url = https://github.com/Ecaty/Clipper2.git
+	branch = ecaty
+	shallow = true
+	ignore = dirty

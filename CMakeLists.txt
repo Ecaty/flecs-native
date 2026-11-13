@@ -1,12 +1,32 @@
 cmake_minimum_required(VERSION 3.20)
 project(FlecsUnityCore LANGUAGES C CXX)
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/vendor/UPSTREAM.json" FLECS_UPSTREAM_JSON)
-string(JSON FLECS_UPSTREAM_COMMIT GET "${FLECS_UPSTREAM_JSON}" commit)
-string(SUBSTRING "${FLECS_UPSTREAM_COMMIT}" 0 7 FLECS_UPSTREAM_SHORT)
-add_library(flecs_unity_core OBJECT src/flecs_unity.cpp src/Components.cpp vendor/flecs.c)
-# Do not put vendor/ on the standard include path: its VERSION file shadows <version> on Windows.
+# Third-party code lives in vendor/ as submodules of our forks; the submodule commit is the pin.
+set(FLECS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/vendor/flecs")
+if(NOT EXISTS "${FLECS_DIR}/distr/flecs.c")
+  message(FATAL_ERROR "Missing vendor submodules. Run: git submodule update --init --recursive")
+endif()
+# The binary reports FLECS_VERSION+<short pinned commit>. Read it from the submodule checkout;
+# fall back to the gitlink recorded in this repository, then to "unknown".
+find_package(Git QUIET)
+set(FLECS_UPSTREAM_COMMIT "")
+if(GIT_FOUND)
+  execute_process(COMMAND "${GIT_EXECUTABLE}" -C "${FLECS_DIR}" rev-parse HEAD
+    OUTPUT_VARIABLE FLECS_UPSTREAM_COMMIT OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET RESULT_VARIABLE FLECS_GIT_RESULT)
+  if(NOT FLECS_GIT_RESULT EQUAL 0 OR NOT FLECS_UPSTREAM_COMMIT MATCHES "^[0-9a-f]+$")
+    execute_process(COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_CURRENT_SOURCE_DIR}" rev-parse HEAD:vendor/flecs
+      OUTPUT_VARIABLE FLECS_UPSTREAM_COMMIT OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+  endif()
+endif()
+if(FLECS_UPSTREAM_COMMIT MATCHES "^[0-9a-f]+$")
+  string(SUBSTRING "${FLECS_UPSTREAM_COMMIT}" 0 7 FLECS_UPSTREAM_SHORT)
+else()
+  set(FLECS_UPSTREAM_SHORT "unknown")
+endif()
+message(STATUS "Flecs submodule revision: ${FLECS_UPSTREAM_SHORT}")
+add_library(flecs_unity_core OBJECT src/flecs_unity.cpp src/Components.cpp "${FLECS_DIR}/distr/flecs.c")
+# Keep only flecs.h on the include path (copied), never the Flecs repository root or vendor/.
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/flecs_include")
-configure_file(vendor/flecs.h "${CMAKE_CURRENT_BINARY_DIR}/flecs_include/flecs.h" COPYONLY)
+configure_file("${FLECS_DIR}/distr/flecs.h" "${CMAKE_CURRENT_BINARY_DIR}/flecs_include/flecs.h" COPYONLY)
 target_include_directories(flecs_unity_core PUBLIC include "${CMAKE_CURRENT_BINARY_DIR}/flecs_include")
 target_compile_features(flecs_unity_core PUBLIC c_std_99 cxx_std_17)
 target_compile_definitions(flecs_unity_core PUBLIC FLECS_SOFT_ASSERT FLECS_KEEP_ASSERT FLECS_CREATE_MEMBER_ENTITIES FLECS_SCRIPT_MATH FU_FLECS_REVISION="${FLECS_UPSTREAM_SHORT}")

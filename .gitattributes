@@ -1,3 +1,0 @@
-# Preserve the exact upstream distribution bytes and recorded SHA-256 hashes.
-vendor/flecs.c -text
-vendor/flecs.h -text
